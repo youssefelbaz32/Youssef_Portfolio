@@ -1,0 +1,157 @@
+<!DOCTYPE HTML>
+<!--
+	Massively by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Youssef Elhagrasy Portfolio</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<link rel="icon" type="image/png" href="images/ye-initials.jpg" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+		<meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centered YouTube Video</title>
+    <style>
+        .video-container {
+            display: flex;
+            justify-content: center; /* Centers the iframe horizontally */
+            margin: 20px 0; /* Optional: Adds some space above and below */
+        }
+    </style>
+	
+	</head>
+	<body class="is-preload">
+		<!-- Wrapper -->
+			<div id="wrapper">
+				<!-- Header -->
+					<header id="header">
+						<a href="index.html" class="logo">Home</a>
+					</header>
+
+				<!-- Nav -->
+					<nav id="nav">
+						<ul class="links">
+							<li><a href="index.html">Home</a></li>
+							<li><a href="FPGA_&_ML.html">FPGA & ML Acceleration</a></li>
+							<li class = "active"><a href="Robot_Summer.html">Robot Summer</a></li>
+							<li class><a href="Football_CV.html"> Football CV</a></li>
+							
+						</ul>
+						<ul class="icons">
+							<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" class="icon brands alt fa-linkedin"><span class="label">LinkedIn</span></a></li>
+									<li><a href="https://github.com/youssefelbaz32" target="_blank" class="icon brands alt fa-github"><span class="label">GitHub</span></a></li>
+						</ul>
+					</nav>
+
+				<!-- Main -->
+					<div id="main">
+
+						<!-- Post -->
+							<section class="post">
+								<header class="major">
+									<h1>Electrical: Robot Summer<br />
+									Competition</h1>
+									<p>Designed PCBs & Firmware for two robots during a robot competition culminating in a win for my team over 14 other teams.</p>
+								</header>
+								<div class="video-container">
+									<iframe width="560" height="315" src="https://www.youtube.com/embed/8mijFtf3gek?si=6YvBQqld6cTCU8Le&amp;start=98" 
+									title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+									referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+								</div>
+								<p>Our goal was to create two autonomous robots capable of working together in real-time to complete complex tasks such as placing ingredients, cooking patties, and assembling a burger—mimicking the teamwork found in Overcooked. 
+									After several design iterations and overcoming various technical challenges, including significant issues with stepper motors, we emerged as the victors in the competition after a tough battle in the finals.</p>
+									 <h2>Role</h2>
+									 <p>My primary responsibilities in the project included the design and development of all the electrical circuits and Printed Circuit Boards (PCBs) necessary for the robots' functionality. This encompassed:
+										<h4>H-Bridge circuits for controlling the motors</h4>
+										<h4>I/O boards to manage input and output signals</h4>
+										<h4>Power boards with integrated current sensing to ensure stable operation</h4>
+										<h4>Actuator boards to drive the robot's mechanical components</h4>
+										<h4>Sensor boards for real-time feedback and decision-making</h4>
+										<h4>Wireless communication between both robots using ESP32-Now and C++</h4></p>
+										<h2>Sample Circuits</h2>
+										<div class="row gtr-50 gtr-uniform">
+											<div class="col-6"><span class="image fit"><img src="images/H_BRIDGE_PCB.png" alt="" /></span></div>
+											<div class="col-6"><span class="image fit"><img src="images/H_BRIDGE_SCHEMATIC.png" alt="" /></span></div>
+										</div>
+										<h4>H-Bridge</h4>
+										<p>H-bridge PCB that is controlled using ESP-32.
+										I included opto-isolators to keep HV and LV grounds seperated. I included plenty of de-coupling capacitors as well.</p>
+										<div class="row gtr-50 gtr-uniform">
+										<div class="col-6"><span class="image fit"><img src="images/Sensor_board.png" alt="" /></span></div>
+										<div class="col-6"><span class="image fit"><img src="images/Sensor_PCB.png" alt="" /></span></div>
+										</div>
+										<h4>Sensor Board</h4>
+										<p>The sensor board was required to follow tape. As such, we used a reflectance sensor to detect black tape. The spacing of the sensor had to be precise so that both detectors would have high values when on black tape. </p>
+									<div class="row gtr-50 gtr-uniform">
+										<div class="col-6"><span class="image fit"><img src="images/Distribution_board_PCB.png" alt="" /></span></div>
+										<div class="col-6"><span class="image fit"><img src="images/Distribution_board_Schematic.png" alt="" /></span></div>
+										</div>
+										<h4>Distribution Board</h4>
+										<p>I created footprints for the stepper motor driver that ran our carousel. This was also used to drive our servos.
+											We had to experiment with the current sense limits by following the datasheet.
+											I also used opto-isolators here to keep HV and LV grounds seperate.
+										</p>
+
+										<h2>Challenges and Achievements</h2>
+										<p>
+											This year’s competition was the toughest edition of the annual second-year Engineering Physics competition, with numerous technical challenges. The stepper motor issues we encountered tested our problem-solving abilities, but we managed to find solutions that allowed our robots to perform consistently in the finals. Despite the difficulties, the experience was highly rewarding, and I’m incredibly proud of our team’s dedication and relentless effort.
+										</p>
+										<h2>Media Coverage</h2>
+										<p>Check out the following links:</p>
+											<p>GlobalNews video (see 1:40): <a href="https://globalnews.ca/video/10693009/ubc-engineering-students-test-their-skills-with-burger-flipping-robots/" target="_blank">GlobalNews</a></p>
+											<p>GlobalTimes: <a href= https://www.globaltimes.cn/page/202408/1317708.shtml target="_blank">GlobalTimes</a></p>
+											<p>UBC Engineering: <a href=https://engineering.ubc.ca/news/2024/ubc-engineering-students-robots-cook-storm-annual-competition target="_blank"> UBC Engineering</a></p>
+											<p>CityNews: <a href= https://www.youtube.com/watch?app=desktop&v=8mijFtf3gek target="_blank">CityNews</a></p>		
+							</section>
+
+					</div>
+
+				<!-- Footer -->
+				<footer id="footer">
+						
+					<section class="contact">
+						<section class="alt">
+							<h3>Address</h3>
+							<p>5960 Student Union Blvd<br />
+							Vancouver, BC V6T 1Z1</p>
+						</section>
+						<section>
+							<h3>Phone</h3>
+							<p><a href="#">(236) 339-3012</a></p>
+						</section>
+						<section>
+							<h3>Email</h3>
+							<p><a href="#">youssefelbaz32@gmail.com</a></p>
+						</section>
+						<section>
+							<h3>Social</h3>
+							<ul class="icons alt">
+								<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" class="icon brands alt fa-linkedin"><span class="label">LinkedIn</span></a></li>
+								<li><a href="https://github.com/youssefelbaz32" target="_blank" class="icon brands alt fa-github"><span class="label">GitHub</span></a></li>
+							</ul>
+						</section>
+					</section>
+				</footer>
+
+				<!-- Copyright -->
+					<div id="copyright">
+						<ul><li>&copy; Untitled</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li></ul>
+					</div>
+
+			</div>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/jquery.scrolly.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+	</body>
+</html>
