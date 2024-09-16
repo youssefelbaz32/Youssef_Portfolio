@@ -49,9 +49,11 @@
 					<nav id="nav">
 						<ul class="links">
 							<li><a href="index.html">Home</a></li>
+							<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/overlay/1726452172425/single-media-viewer/?profileId=ACoAADxv2xcB4kSWZ8vJPFKU7wLbDM6u_ikK-nc" target="_blank">Resume</a></li>
 							<li><a href="FPGA_&_ML.html">FPGA & ML Acceleration</a></li>
 							<li class><a href="Robot_Summer.html">Robot Summer</a></li>
 							<li class = "active"><a href="Football_CV.html"> Football CV</a></li>
+							<li class><a href="publication.html">Transistor Publication</a></li>
 							
 						</ul>
 						<ul class="icons">
@@ -66,57 +68,54 @@
 						<!-- Post -->
 							<section class="post">
 								<header class="major">
-									<h1>Electrical: Robot Summer<br />
-									Competition</h1>
-									<p>Designed PCBs & Firmware for two robots during a robot competition culminating in a win for my team over 14 other teams.</p>
+									<h1>Football Match:<br />
+									Computer Vision</h1>
+									<p>Trained my own YOLO model for inference and used K-means for each player/referee to help classify them. 
+										Used camera perspective to track speeds and distance covered as well as possession of each team.</p>
 								</header>
 								<div class="gif-container">
 									<img src="images/output_video-ezgif.com-video-to-gif-converter.gif" alt="Early Project Sample">
 								</div>
-								<p>Our goal was to create two autonomous robots capable of working together in real-time to complete complex tasks such as placing ingredients, cooking patties, and assembling a burger—mimicking the teamwork found in Overcooked. 
-									After several design iterations and overcoming various technical challenges, including significant issues with stepper motors, we emerged as the victors in the competition after a tough battle in the finals.</p>
-									 <h2>Role</h2>
-									 <p>My primary responsibilities in the project included the design and development of all the electrical circuits and Printed Circuit Boards (PCBs) necessary for the robots' functionality. This encompassed:
-										<h4>H-Bridge circuits for controlling the motors</h4>
-										<h4>I/O boards to manage input and output signals</h4>
-										<h4>Power boards with integrated current sensing to ensure stable operation</h4>
-										<h4>Actuator boards to drive the robot's mechanical components</h4>
-										<h4>Sensor boards for real-time feedback and decision-making</h4>
-										<h4>Wireless communication between both robots using ESP32-Now and C++</h4></p>
-										<h2>Sample Circuits</h2>
-										<div class="row gtr-50 gtr-uniform">
-											<div class="col-6"><span class="image fit"><img src="images/H_BRIDGE_PCB.png" alt="" /></span></div>
-											<div class="col-6"><span class="image fit"><img src="images/H_BRIDGE_SCHEMATIC.png" alt="" /></span></div>
-										</div>
-										<h4>H-Bridge</h4>
-										<p>H-bridge PCB that is controlled using ESP-32.
-										I included opto-isolators to keep HV and LV grounds seperated. I included plenty of de-coupling capacitors as well.</p>
-										<div class="row gtr-50 gtr-uniform">
-										<div class="col-6"><span class="image fit"><img src="images/Sensor_board.png" alt="" /></span></div>
-										<div class="col-6"><span class="image fit"><img src="images/Sensor_PCB.png" alt="" /></span></div>
-										</div>
-										<h4>Sensor Board</h4>
-										<p>The sensor board was required to follow tape. As such, we used a reflectance sensor to detect black tape. The spacing of the sensor had to be precise so that both detectors would have high values when on black tape. </p>
-									<div class="row gtr-50 gtr-uniform">
-										<div class="col-6"><span class="image fit"><img src="images/Distribution_board_PCB.png" alt="" /></span></div>
-										<div class="col-6"><span class="image fit"><img src="images/Distribution_board_Schematic.png" alt="" /></span></div>
-										</div>
-										<h4>Distribution Board</h4>
-										<p>I created footprints for the stepper motor driver that ran our carousel. This was also used to drive our servos.
-											We had to experiment with the current sense limits by following the datasheet.
-											I also used opto-isolators here to keep HV and LV grounds seperate.
-										</p>
+								<p>In my recent project, I trained a custom YOLO (You Only Look Once) model to perform real-time player and referee detection during sports games. Leveraging advanced object detection techniques, I implemented a system that not only identifies individuals on the field but also tracks their movements, calculates their speeds, and assesses possession throughout the game.
+								</p>
+									 <h2>Key Features of the Project</h2>
+										<h4>Custom YOLO Model</h4>
+										<p>I trained my own YOLO model to specifically detect players and referees, ensuring accurate and consistent identification.
+											 This required using a Kaggle set and using my GPU to train the model.</p>
+										<h4>K-means for Classification</h4>
+										<p>To enhance the YOLO model's inference, I applied K-means clustering to distinguish between individual players and referees. 
+											By clustering based on visual features and movements, I was able to improve classification accuracy
+											and provide a better understanding of each participant's role during the game.</p>
+											<img src="images/K_means.png">
+										<h4>Tracking Movements</h4>
+										<p>Using a combination of camera perspective correction and object tracking techniques, I was able to estimate the speed and distance covered by each player. The project involved integrating camera calibration to translate pixel movement into real-world distances, providing accurate performance metrics for each individual on the field.</p>
+										<h4>Team Possession Analysis</h4>
+										<p>By continuously monitoring the positions and movements of all detected players, I developed a possession-tracking system.
+											The system calculates possession by determining which team controls the ball at any given time based on the proximity of players and ball trajectories.</p>
+										<h2>Technical Details</h2>
+										<h4>YOLO (You Only Look Once)</h4>
+										<p>A state-of-the-art object detection algorithm used for detecting players and referees in real-time during the game.</p>
+										<h4>OpenCV</h4>
+										<p>Used for video processing, camera perspective correction, and tracking the movement of individuals on the field.</p>
+										<h4>K-means Clustering</h4>
+										<p>Applied for classifying detected individuals (players and referees) based on their jersey colors.</p>
+										<h4>Python</h4>
+										<p>The primary programming language used to implement the YOLO model, K-means clustering, and tracking algorithms.</p>
+										<h4>Darknet Framework</h4>
+										<p>Utilized for training the custom YOLO model, providing a deep learning environment optimized for object detection.</p>
+										<h4>Camera Calibration Techniques</h4>
+										<p>Employed to correct for perspective distortions, allowing accurate measurements of speed and distance from pixel-based data.</p>
+										<h4>NumPy & Pandas</h4>
+										<p>Used for data manipulation, numerical computations, and tracking the positions and velocities of players throughout the game.</p>
+										<h4>Matplotlib & Seaborn</h4>
+										<p>Libraries used for visualizing player movements, distances covered, and possession statistics over time.</p>
+										<h4>Jupyter Notebooks</h4>
+										<p>Used for iterative model development, testing, and visualization of results in an interactive environment.</p>
+										<h2>Results</h2>
+										<p>This system has proven to be highly effective in analyzing player performance and team dynamics in real-time. Coaches and analysts can now use this data to assess player speeds, stamina, and overall team strategy. Moreover, the possession analysis provides valuable insights into ball control and game flow, offering a deeper understanding of the game’s dynamics.
 
-										<h2>Challenges and Achievements</h2>
-										<p>
-											This year’s competition was the toughest edition of the annual second-year Engineering Physics competition, with numerous technical challenges. The stepper motor issues we encountered tested our problem-solving abilities, but we managed to find solutions that allowed our robots to perform consistently in the finals. Despite the difficulties, the experience was highly rewarding, and I’m incredibly proud of our team’s dedication and relentless effort.
-										</p>
-										<h2>Media Coverage</h2>
-										<p>Check out the following links:</p>
-											<p>GlobalNews video (see 1:40): <a href="https://globalnews.ca/video/10693009/ubc-engineering-students-test-their-skills-with-burger-flipping-robots/" target="_blank">GlobalNews</a></p>
-											<p>GlobalTimes: <a href= https://www.globaltimes.cn/page/202408/1317708.shtml target="_blank">GlobalTimes</a></p>
-											<p>UBC Engineering: <a href=https://engineering.ubc.ca/news/2024/ubc-engineering-students-robots-cook-storm-annual-competition target="_blank"> UBC Engineering</a></p>
-											<p>CityNews: <a href= https://www.youtube.com/watch?app=desktop&v=8mijFtf3gek target="_blank">CityNews</a></p>		
+											This project marks an important step in my journey into machine learning and computer vision for sports analytics, combining detection, classification, and tracking into a cohesive system.</p>
+											
 							</section>
 
 					</div>
