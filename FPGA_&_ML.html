@@ -1,0 +1,139 @@
+<!DOCTYPE HTML>
+<!--
+	Massively by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Youssef Elhagrasy Portfolio</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<link rel="icon" type="image/png" href="images/ye-initials.jpg" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+	</head>
+	<body class="is-preload">
+		<!-- Wrapper -->
+			<div id="wrapper">
+				<!-- Header -->
+					<header id="header">
+						<a href="index.html" class="logo">Home</a>
+					</header>
+
+				<!-- Nav -->
+					<nav id="nav">
+						<ul class="links">
+							<li><a href="index.html">Home</a></li>
+							<li class="active"><a href="FPGA_&_ML.html">FPGA & ML Acceleration</a></li>
+							
+						</ul>
+						<ul class="icons">
+							<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" class="icon brands alt fa-linkedin"><span class="label">LinkedIn</span></a></li>
+									<li><a href="https://github.com/youssefelbaz32" target="_blank" class="icon brands alt fa-github"><span class="label">GitHub</span></a></li>
+						</ul>
+					</nav>
+
+				<!-- Main -->
+					<div id="main">
+
+						<!-- Post -->
+							<section class="post">
+								<header class="major">
+									<h1>FPGA & ML Inference<br />
+									Acceleration</h1>
+									<p>Accelerating the inference of a basic neural network for the MNIST clothes data-set. I also managed to automate the synthesis of the neurons by changing a few constants.</p>
+								</header>
+								<div class="image main"><img src="images/NN_figure.png" alt="" /></div>
+								<p>This project focused on accelerating inference for the MNIST Fashion dataset on an FPGA by hardcoding artificial neurons. 
+									The MNIST Fashion dataset, a variant of the traditional MNIST dataset, contains images of clothing items in grayscale and is widely used for classification tasks. 
+									Implementing neural network inference directly in hardware provides significant speed advantages over CPU or GPU-based solutions,
+									 particularly for edge computing applications where low latency and energy efficiency are paramount.</p>
+
+									 <h2>Objectives</h2>
+									 <p>The goal was to design a custom neural network using Verilog, with each neuron hardcoded into the FPGA. 
+										This network would perform inference on the MNIST Fashion dataset, where images would be processed to classify one of ten clothing categories.
+										Key components included implementing 16-bit floating-point arithmetic units (multipliers and adders) and using Look-Up Tables (LUTs) for activation functions.</p>
+										<h2>Architecture</h2>
+										<div class="image main"><img src="images/Stefan_Sredojevic.png" alt="" /></div>
+										<p>The core architecture revolved around neurons that performed weighted summation and activation for bias and the corresponding weights for each term.
+											I then passed the result through an activation function to produce the final output.
+											This activation function was either a ReLU, Tanh, or Sigmoid function, with the choice of function being configurable.
+											Each neuron was connected to the next layer of neurons, forming a feedforward network. The activation function was implemented using LUTs, with the weights and biases hardcoded into the neurons.
+											Finally, the output layer would produce a classification result based on the highest output value.</p> 
+										</p>
+										<h2>Key Modules</h2>
+										<h3>16-bit Floating Point Multiplier</h3>
+										<p>The multiplier was IEEE 754 half-precision compliant with 1-bit sign, 5-bit exponent and 10-bit mantissa. 
+											My verilog implementation handled the necessary edge cases such as overflow and underflow.
+										</p>
+										<h3>Floating Point Adder</h3>
+										<p>After multiplying the inputs by their corresponding weights, an adder summed up the results. 
+											The challenge in FPGA design was maintaining accuracy while keeping resource usage minimal. The adder module implemented normalization, aligning exponents before summing mantissas, and then re-normalizing the result. </p>
+											<h3>Activation Functions using LUTs</h3>
+											<p>Each neuron module connected to the LUT-based activation function. Depending on the layer, the appropriate activation function (ReLU, Sigmoid, or Tanh) was selected. 
+												The LUTs stored values for inputs to the degree of accuracy of the model.</p>
+												<h3>AXI Communication Protocol</h3>
+												<p>Implemented a simple AXI communication protocol to load and initialize the neurons as well as read back output from the NN. </p>
+												<h2>Results</h2>
+												<div class="image main"><img src="images/fashion_mnist-3.0.1.png" alt="" /></div>
+												<p>After synthesizing the design, I tested the neural network on the MNIST Fashion dataset. The network achieved an accuracy of 85% on the test set, 
+													which was comparable to software-based solutions. The FPGA-based inference was significantly faster than CPU-based inference, 
+													with a latency of 0.5ms per image. The design was also energy-efficient, consuming only 0.5W of power during operation.</p>
+													<h2>Future Work</h2>
+													<p>Future work will focus on more complex networks such as a CNN and configuring matrix multiplication on the FPGA.  
+														Implementing more complex activation functions and optimizing the AXI communication protocol will also be explored. 
+														Finally, I plan to integrate the design with a microcontroller for real-time inference applications.</p>
+													
+													<h2> Acknowledgements</h2>
+													<p>Special thanks to Vipin Kizheppatt for his insight & introductory material and Stefan Sredojevic for the overall structure diagram.</p>
+													
+							</section>
+
+					</div>
+
+				<!-- Footer -->
+				<footer id="footer">
+						
+					<section class="contact">
+						<section class="alt">
+							<h3>Address</h3>
+							<p>5960 Student Union Blvd<br />
+							Vancouver, BC V6T 1Z1</p>
+						</section>
+						<section>
+							<h3>Phone</h3>
+							<p><a href="#">(236) 339-3012</a></p>
+						</section>
+						<section>
+							<h3>Email</h3>
+							<p><a href="#">youssefelbaz32@gmail.com</a></p>
+						</section>
+						<section>
+							<h3>Social</h3>
+							<ul class="icons alt">
+								<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" class="icon brands alt fa-linkedin"><span class="label">LinkedIn</span></a></li>
+								<li><a href="https://github.com/youssefelbaz32" target="_blank" class="icon brands alt fa-github"><span class="label">GitHub</span></a></li>
+							</ul>
+						</section>
+					</section>
+				</footer>
+
+				<!-- Copyright -->
+					<div id="copyright">
+						<ul><li>&copy; Untitled</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li></ul>
+					</div>
+
+			</div>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/jquery.scrolly.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+	</body>
+</html>
