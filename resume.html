@@ -35,6 +35,25 @@
 		max-width: 500px; /* Optional: Set a max width for large GIFs */
 	}
 </style>
+
+<style>
+	html, body {
+		height: 100%;
+		margin: 0;
+		padding: 0;
+	}
+	.pdf-container {
+		width: 100%;
+		height: 150vh; /* Adjust this height as needed to be taller than the viewport */
+		overflow: auto; /* Allow scrolling if the content is taller than the container */
+	}
+	.pdf-container iframe,
+	.pdf-container embed {
+		width: 100%;
+		height: 100%;
+		border: none;
+	}
+</style>
 	
 	</head>
 	<body class="is-preload">
@@ -49,11 +68,11 @@
 					<nav id="nav">
 						<ul class="links">
 							<li><a href="index.html">Home</a></li>
-							<li><a href="resume.html" >Resume</a></li>
+							<li class = "active"><a href="resume.html">Resume</a></li>
 							<li><a href="FPGA_&_ML.html">FPGA & ML Acceleration</a></li>
 							<li><a href="Robot_Summer.html">Robot Summer</a></li>
 							<li><a href="Football_CV.html"> Football CV</a></li>
-							<li class="active"><a href="publication.html">Transistor Publication</a></li>
+							<li><a href="publication.html">Transistor Publication</a></li>
 						</ul>
 						<ul class="icons">
 							<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" class="icon brands alt fa-linkedin"><span class="label">LinkedIn</span></a></li>
@@ -67,17 +86,15 @@
 						<!-- Post -->
 							<section class="post">
 								<header class="major">
-									<h1>Paper: 2D MXene-based transistors with Enhanced Device Performance via 2D Liquid Intercalation<br />
+									<h1>Resume<br />
 									</h1>
-									<p>We worked on developing MXene based transistors. MXene "MXene is a new class of graphene like two-dimensional transition metal carbon (nitrogen) compounds obtained by selectively etching specific atomic layers from multiple layered carbon (nitrogen) compounds." It is a possible candidate as a new transistor gate material.</p>
-								</header>
-								<div class="gif-container">
-									<img src="images/research.png">
-								</div>
-								<p> I worked on developing a fast and eco-friendly method to transfer MXene films at the wafer scale (4-inch), allowing them to be used in advanced microelectronics. I performed tests, ran analysis, and wrote much of the methodology, focusing on how MXene films could improve device performance through interface engineering. The process enabled significant improvements in carrier transfer efficiency by using hydrogen iodide intercalation.
-								</p>
-								<p> This paper was published on Advanced Materials Journal, all thanks to Prof. Husam N. Alshareef and Dr. Xiangming Xu. The journal has an impact factor of 29.4. The manuscript is available <a href="https://onlinelibrary.wiley.com/doi/10.1002/adma.202405214" target="_blank"> here. </a>
-								</p>	
+									<div class="pdf-container">
+										<!-- Using <embed> to embed the PDF -->
+										<!-- <embed src="resume.pdf" type="application/pdf"> -->
+										
+										<!-- Using <iframe> to embed the PDF -->
+										<iframe src="documents/Youssef_CV.pdf"></iframe>
+									</div>
 							</section>
 
 					</div>
