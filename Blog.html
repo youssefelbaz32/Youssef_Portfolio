@@ -1,0 +1,201 @@
+<!DOCTYPE HTML>
+<!--
+	Massively by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Youssef Elhagrasy Portfolio</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<link rel="icon" type="image/png" href="images/ye-initials.jpg" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+		<style>
+			/* small, self-contained additions; do not override template classes */
+			.mono-block{font-family:Consolas,Menlo,monospace;font-size:0.85em;line-height:1.5;overflow-x:auto;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:1em;}
+			.entry-date{display:inline-block;font-family:Consolas,Menlo,monospace;font-size:0.8em;letter-spacing:0.15em;text-transform:uppercase;color:#7bd0ff;margin-bottom:0.4em;}
+			.tag{display:inline-block;font-family:Consolas,Menlo,monospace;font-size:0.7em;padding:0.15em 0.6em;border:1px solid rgba(255,255,255,0.2);border-radius:4px;margin-left:0.5em;vertical-align:middle;}
+			.tag.done{color:#8fe0b0;border-color:rgba(143,224,176,0.4);}
+			.tag.wip{color:#e6c766;border-color:rgba(230,199,102,0.4);}
+			hr.entry-sep{margin:3em 0;}
+		</style>
+	</head>
+	<body class="is-preload">
+		<!-- Wrapper -->
+			<div id="wrapper">
+				<!-- Header -->
+					<header id="header">
+						<a href="index.html" class="logo">Home</a>
+					</header>
+
+				<!-- Nav -->
+					<nav id="nav">
+						<ul class="links">
+							<li><a href="index.html">Home</a></li>
+							<li><a href="resume.html">Resume</a></li>
+							<li><a href="FPGA_&_ML.html">FPGA & ML Acceleration</a></li>
+							<li><a href="Attention_Accelerator.html">Attention Accelerator</a></li>
+							<li><a href="Robot_Summer.html">Robot Summer </a></li>
+							<li><a href="Football_CV.html"> Football CV</a></li>
+							<li><a href="publication.html">Transistor Publication</a></li>
+							<li class="active"><a href="Blog.html">Blog</a></li>
+						</ul>
+						<ul class="icons">
+							<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" class="icon brands alt fa-linkedin"><span class="label">LinkedIn</span></a></li>
+									<li><a href="https://github.com/youssefelbaz32" target="_blank" class="icon brands alt fa-github"><span class="label">GitHub</span></a></li>
+						</ul>
+					</nav>
+
+				<!-- Main -->
+					<div id="main">
+
+						<!-- Post -->
+							<section class="post">
+								<header class="major">
+									<h1>Dev Blog</h1>
+									<p>A running log of what I am building, mostly the <a href="Attention_Accelerator.html">Attention Accelerator</a> right now &mdash; the honest version, with the bugs and the lessons, newest entries at the top.</p>
+								</header>
+
+								<!-- ============================================================= -->
+								<!-- ADD NEW BLOG ENTRIES HERE (newest first).                     -->
+								<!-- Copy one <article> block below, update the date, h2 title,    -->
+								<!-- optional tag (done/wip), and body. Keep <hr class="entry-sep"/>-->
+								<!-- between entries.                                              -->
+								<!-- ============================================================= -->
+
+								<!-- ENTRY: M5 -->
+								<article>
+									<span class="entry-date">2026-08-02</span><span class="tag wip">M5 &middot; in progress</span>
+									<h2>Dropping into RTL: a dot-product MAC in SystemVerilog</h2>
+									<p>This is the milestone the whole project was pointing at. I am now building the attention core in synthesizable SystemVerilog, targeting a Xilinx FPGA through Vivado. The build order inside M5 is qkt &rarr; row-max &rarr; softmax &rarr; PV &rarr; full naive core, and I started at the very bottom: the dot-product MAC that lives inside QK&#8868;.</p>
+									<p>The unit, <code>dot4</code>, computes <code>sum(a[k]*b[k])</code> for two length-4 Q8.8 vectors. Instead of four parallel multipliers I used <b>one signed multiplier time-multiplexed over four cycles</b>, driven by a tiny FSM (IDLE &rarr; LOAD &rarr; MAC &rarr; DONE). That is the area-efficient choice and it is good practice for the streaming version later.</p>
+									<p>The fixed-point bookkeeping is the part you cannot get sloppy with. A Q8.8 times a Q8.8 is a Q16.16 product, so I accumulate the raw Q16.16 in a wide 40-bit accumulator for headroom, then shift right by 8 (arithmetic <code>&gt;&gt;&gt;</code>, not <code>&gt;&gt;</code>, so the sign bit survives) and saturate to 16 bits exactly once at the end:</p>
+									<pre class="mono-block">Q8.8 * Q8.8  ->  Q16.16 (32b)   // double the fraction bits
+acc (40b)    +=  product         // wide, for headroom
+s = saturate( acc &gt;&gt;&gt; 8 )         // back to Q8.8, clamp once</pre>
+									<p>Every module gets a valid/ready handshake. That is deliberate &mdash; valid/ready <i>is</i> the core of AXI4-Stream, so these blocks will drop straight into a streaming design when I get to the host&harr;FPGA link.</p>
+									<p>The testbench drives known vectors through the full handshake and checks three cases &mdash; and all three pass:</p>
+									<pre class="mono-block">T1 [1,2,3,4].[1,1,1,1] = 10.0  -> 2560   PASS   // basic
+T2 [-1,-2,3,4].[1,1,1,1] = 4.0 -> 1024   PASS   // signed
+T3 [100..].[100..] = 40000     -> 32767  PASS   // saturates</pre>
+									<p>Next up is the <code>qkt</code> engine: reuse this one <code>dot4</code> instance, sequence it over all N&times;N token pairs with a controller FSM, and apply the <code>1/&#8730;d</code> scale &mdash; which is just a right shift here, since my dimensions are powers of two. That one is in progress.</p>
+								</article>
+
+								<hr class="entry-sep" />
+
+								<!-- ENTRY: M4 -->
+								<article>
+									<span class="entry-date">2026-08-01</span><span class="tag done">M4 &middot; done</span>
+									<h2>CUDA tiled kernel: load once, reuse many</h2>
+									<p>M4 is the same float32 attention math as the naive kernel &mdash; the only thing that changes is <i>where the data lives while I compute</i>. Instead of every thread re-reading Q, K and V straight from global memory, the block stages them into <code>__shared__</code> memory once, syncs, and then everyone reuses the on-chip copy.</p>
+									<p>I wanted to actually quantify why that matters, so I counted the global accesses at N = d = d_v = 4 with no caching:</p>
+									<pre class="mono-block">naive:  Q,K,V each read N*N*D = 64  -> 192 reads + 16 writes
+distinct input elements          = 3 * 16 = 48
+redundancy = 192 / 48            = 4x  (= N)</pre>
+									<p>So the naive kernel re-fetches every key and value row once per query row. Tiling drives those N&sup2; terms back toward N: load 48 elements to shared once, reuse them on-chip. At N=4 it is invisible on the clock, but at large N that redundancy <i>is</i> the whole memory-bound problem.</p>
+									<p>The new hazard is <code>__syncthreads()</code>. It is a block-wide barrier and <b>every thread has to reach every barrier</b> &mdash; if you put one after an early <code>return</code>, the threads that returned never arrive and the block deadlocks (technically undefined behavior, which is worse: it might hang, might return garbage, might look fine until it doesn't). The rule I keep repeating to myself: <b>guard the work, not the barrier.</b> Cooperative load inside <code>if(i&lt;N)</code>, then an unguarded <code>__syncthreads()</code> that all threads hit, then the guarded compute.</p>
+									<p>Bugs I hit before it ran (all mine, all caught on the CPU harness):</p>
+									<ul>
+										<li>Indexed the shared V tile as <code>sV[c*DV+j]</code> when it should be <code>sV[j*DV+c]</code> &mdash; a transpose that silently corrupts the answer. The real one.</li>
+										<li>Scores loop written <code>j &lt; D</code> instead of <code>j &lt; N</code>. Latent, masked by N==D, wrong intent.</li>
+										<li>Wrote the kernel launch with <code>&lt;&lt;</code> (bit-shift!) instead of the triple <code>&lt;&lt;&lt;...&gt;&gt;&gt;</code>.</li>
+										<li>Error-check order inverted &mdash; copied results back <i>before</i> checking the launch. It has to be launch &rarr; getLastError &rarr; sync &rarr; copy.</li>
+									</ul>
+									<p>Result: <b>max abs err 1.192093e-07, bit-for-bit identical to the naive kernel.</b> Same math, different data path &mdash; exactly what I wanted to see.</p>
+								</article>
+
+								<hr class="entry-sep" />
+
+								<!-- ENTRY: M3 -->
+								<article>
+									<span class="entry-date">2026-07-18</span><span class="tag done">M3 &middot; done</span>
+									<h2>CUDA naive kernel, and why I went back to float</h2>
+									<p>For the GPU I deliberately dropped the fixed-point work and went back to plain float32. The reason is a rule I keep coming back to: never debug two new things at once. On the GPU I want to isolate <i>did I parallelize correctly?</i> from <i>did I quantize correctly?</i>. So this kernel is float, one thread per output row, and the only question it answers is whether my parallel version matches the golden model.</p>
+									<p>My dev machine is an M1 Mac with no <code>nvcc</code>, so I write the <code>.cu</code> here and run it on a separate GPU box. To make sure both sides see byte-identical inputs (C++ <code>rand</code> can't reproduce NumPy), I export Q, K, V and the golden O to <code>.npy</code> files and load those in the CUDA host code.</p>
+									<p>The one real design decision was casting to float32 <i>before</i> saving, rather than exporting float64 and downcasting in CUDA. That keeps a single source of truth &mdash; both sides read the identical float32 bytes, so any difference is the kernel's fault and never a silent truncation. It also matches the target hardware and halves the bytes. The known consequence is a hard error floor: the golden is computed in float64 then cast to float32, so even a perfect kernel will differ by float32 rounding. Do not chase it to zero.</p>
+									<p>Best bug of the milestone was in the <code>.npy</code> loader. The header length is already a byte count, but I wrote <code>fseek(2 * hdr_len, ...)</code> and seeked past the end of the file. The nasty part: <b>seeking past EOF is silently legal</b> and returns 0 &mdash; nothing complains until the later <code>fread</code> comes up short, and only its return count tells you. That is exactly why checking <code>fread</code>'s return value is load-bearing and not defensive boilerplate. Same silent-failure family as unchecked <code>cudaMemcpy</code> and kernel-launch errors.</p>
+									<p>Result: <b>max abs err 1.192093e-07</b> &mdash; which is exactly float32 machine epsilon, 2<sup>-23</sup>, the theoretical floor against an f64-then-f32 golden. You cannot do better, and I hit it.</p>
+								</article>
+
+								<hr class="entry-sep" />
+
+								<!-- ENTRY: M2 -->
+								<article>
+									<span class="entry-date">2026-06-28</span><span class="tag done">M2 &middot; done</span>
+									<h2>A fixed-point twin, and the softmax that stopped summing to 1</h2>
+									<p>FPGAs don't hand you floating point, so before touching any HDL I rebuilt the whole model on a Q8.8 integer grid in Python &mdash; real numbers scaled by 256 and stored as signed 16-bit integers &mdash; and diffed it against the float golden. Same seed, so every difference is genuine quantization error, not input drift.</p>
+									<p>The single most important rule in the whole file is the grid bookkeeping: a Q8.8 times a Q8.8 is a Q16.16, so after each integer matmul you divide the accumulator by SCALE&sup2; = 256&sup2; to get back to a real value. And you saturate <i>before</i> storing, or a large value wraps around silently.</p>
+									<p>Headline number: <b>max abs error 0.00631, mean 0.00205</b> vs the golden &mdash; about 0.6% worst case. That is the error budget I now hold the CUDA and RTL versions to. Being able to quote a concrete number before writing a line of hardware is the entire point of this level.</p>
+									<p>Two bugs worth remembering. First, I wrote the golden softmax as <code>exp(S - max)</code> and forgot the <code>/ sum</code> &mdash; the P rows summed to 1.7&ndash;2.9 and the output came out about 2&times; too big. Caught it by just printing <code>P.sum(axis=1)</code>. Second, an earlier draft used the raw float V in the P&middot;V step instead of the quantized Vq, so that stage wasn't actually on the grid.</p>
+									<p>Then the interesting one, which I surfaced on purpose: quantizing a perfectly normalized softmax row breaks its normalization.</p>
+									<pre class="mono-block">Pq row sums (Q8.8): [256, 257, 255, 256]   // should all be 256 = 1.0</pre>
+									<p>Each tiny probability gets rounded onto the lattice and the &plusmn;1 errors don't cancel. At N=4 it is only &plusmn;1/256; at N=128 you are summing 128 rounding errors and it compounds. The real fix is more fraction bits or an explicit renormalization stage &mdash; and now I know I have to budget for that in the RTL. Much cheaper to learn here than on the FPGA.</p>
+								</article>
+
+								<hr class="entry-sep" />
+
+								<!-- ENTRY: M1 -->
+								<article>
+									<span class="entry-date">2026-06-13</span><span class="tag done">M1 &middot; done</span>
+									<h2>Starting from a golden model I can trust</h2>
+									<p>Every good hardware project starts with a reference you believe completely, so milestone one is a float64 implementation of single-head scaled dot-product attention in NumPy, at tiny hand-checkable dimensions (N = d = d_v = 4). I built it chunk by chunk: imports and a fixed seed, dimensions, Q/K/V, the scores, a numerically-stable softmax, and the output.</p>
+									<pre class="mono-block">S = Q @ K.T / np.sqrt(d)     # token-by-token scores
+P = softmax(S)               # row-max subtract, exp, normalize
+O = P @ V                     # weighted blend of the value rows
+assert np.allclose(P.sum(axis=1), 1.0)</pre>
+									<p>The <code>assert</code> is the first test in the project: if softmax is on the wrong axis or missing its normalization, the row sums won't be 1 and the script dies. It passed, and by inspection softmax preserves rank (the biggest score in a row becomes the biggest probability) and O leans toward the value row it weights most.</p>
+									<p>A few things clicked here that pay off at every later level. A matmul eats its shared inner dimension &mdash; <code>Q @ K.T</code> contracts the feature dim d to give token&times;token scores, whereas <code>Q.T @ K</code> would contract tokens and give you something completely different. The <code>1/&#8730;d</code> factor is numerical conditioning so softmax doesn't saturate. And the row-max subtraction before <code>exp</code> is the exact reason a <code>row_max</code> engine will eventually exist in the RTL. <code>keepdims</code> matters too &mdash; drop it and the reduction broadcasts against the wrong axis silently.</p>
+									<p>The real value of this milestone is the discipline: a self-checking float reference with a fixed seed means every lower level has an unambiguous oracle. Any mismatch downstream is a real bug, never input drift.</p>
+								</article>
+
+							</section>
+
+					</div>
+
+				<!-- Footer -->
+				<footer id="footer">
+
+					<section class="contact">
+						<section class="alt">
+							<h3>Address</h3>
+							<p>5960 Student Union Blvd<br />
+							Vancouver, BC V6T 1Z1</p>
+						</section>
+						<section>
+							<h3>Phone</h3>
+							<p><a href="#">(236) 339-3012</a></p>
+						</section>
+						<section>
+							<h3>Email</h3>
+							<p><a href="#">youssefelbaz32@gmail.com</a></p>
+						</section>
+						<section>
+							<h3>Social</h3>
+							<ul class="icons alt">
+								<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" class="icon brands alt fa-linkedin"><span class="label">LinkedIn</span></a></li>
+								<li><a href="https://github.com/youssefelbaz32" target="_blank" class="icon brands alt fa-github"><span class="label">GitHub</span></a></li>
+							</ul>
+						</section>
+					</section>
+				</footer>
+
+				<!-- Copyright -->
+					<div id="copyright">
+						<ul><li>&copy; Untitled</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li></ul>
+					</div>
+
+			</div>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/jquery.scrolly.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+	</body>
+</html>

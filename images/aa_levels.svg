@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 430" font-family="Consolas,Menlo,monospace" role="img" aria-label="Six abstraction levels of the attention accelerator from Python float to FlashAttention-lite, with status and error at each level">
+  <defs>
+    <style>
+      .row{stroke:#2e3b57;stroke-width:1.5;rx:8;}
+      .name{fill:#e6edf6;font-size:17px;font-weight:700;}
+      .desc{fill:#9db0cc;font-size:12px;}
+      .metric{fill:#7bd0ff;font-size:13px;font-weight:700;}
+      .done{fill:#1c7d4d;font-size:12px;font-weight:700;}
+      .wip{fill:#c99a2e;font-size:12px;font-weight:700;}
+      .num{fill:#5a6a86;font-size:13px;font-weight:700;}
+    </style>
+  </defs>
+  <rect x="0" y="0" width="920" height="430" fill="#0b0f1a" rx="12"/>
+  <text class="name" x="30" y="34" font-size="19">Attention, built once per abstraction level</text>
+  <text class="desc" x="30" y="54">Every level is diffed against the level above. Same fixed seed, same inputs, so any mismatch is a real bug.</text>
+
+  <!-- rows -->
+  <!-- L1 -->
+  <rect class="row" x="30" y="72" width="860" height="48" fill="#122033"/>
+  <text class="num" x="48" y="101">1</text>
+  <text class="name" x="78" y="94">Python float64 golden model</text>
+  <text class="desc" x="78" y="112">NumPy reference. The oracle every lower level is checked against.</text>
+  <text class="done" x="700" y="94">DONE - M1</text>
+  <text class="metric" x="700" y="112">self-checking oracle</text>
+
+  <!-- L2 -->
+  <rect class="row" x="30" y="128" width="860" height="48" fill="#141b2d"/>
+  <text class="num" x="48" y="157">2</text>
+  <text class="name" x="78" y="150">Python Q8.8 fixed-point twin</text>
+  <text class="desc" x="78" y="168">Integer arithmetic the FPGA will do, in Python. Quotes an error budget before any HDL.</text>
+  <text class="done" x="700" y="150">DONE - M2</text>
+  <text class="metric" x="700" y="168">max abs err 0.00631</text>
+
+  <!-- L3 -->
+  <rect class="row" x="30" y="184" width="860" height="48" fill="#122033"/>
+  <text class="num" x="48" y="213">3</text>
+  <text class="name" x="78" y="206">CUDA naive kernel</text>
+  <text class="desc" x="78" y="224">One thread per output row. Float32, one axis of change at a time.</text>
+  <text class="done" x="700" y="206">DONE - M3</text>
+  <text class="metric" x="700" y="224">max abs err 1.19e-7</text>
+
+  <!-- L4 -->
+  <rect class="row" x="30" y="240" width="860" height="48" fill="#141b2d"/>
+  <text class="num" x="48" y="269">4</text>
+  <text class="name" x="78" y="262">CUDA tiled kernel (shared memory)</text>
+  <text class="desc" x="78" y="280">Load once, reuse many. Same math, kills the 4x redundant global reads.</text>
+  <text class="done" x="700" y="262">DONE - M4</text>
+  <text class="metric" x="700" y="280">max abs err 1.19e-7</text>
+
+  <!-- L5 -->
+  <rect class="row" x="30" y="296" width="860" height="48" fill="#122033"/>
+  <text class="num" x="48" y="325">5</text>
+  <text class="name" x="78" y="318">SystemVerilog RTL core</text>
+  <text class="desc" x="78" y="336">Q8.8, valid/ready handshake. dot4 MAC verified; QK&#8868; engine in progress.</text>
+  <text class="wip" x="700" y="318">IN PROGRESS - M5</text>
+  <text class="metric" x="700" y="336">dot4 T1-T3 PASS</text>
+
+  <!-- L6 -->
+  <rect class="row" x="30" y="352" width="860" height="48" fill="#141b2d"/>
+  <text class="num" x="48" y="381">6</text>
+  <text class="name" x="78" y="374">FlashAttention-lite (online softmax)</text>
+  <text class="desc" x="78" y="392">Fuse the passes, never materialize the full S matrix.</text>
+  <text class="wip" x="700" y="374">PLANNED - M8</text>
+  <text class="metric" x="700" y="392">roadmap</text>
+</svg>

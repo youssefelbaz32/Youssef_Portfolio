@@ -1,0 +1,150 @@
+<!DOCTYPE HTML>
+<!--
+	Massively by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Youssef Elhagrasy Portfolio</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<link rel="icon" type="image/png" href="images/ye-initials.jpg" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+		<style>
+			/* small, self-contained additions; do not override template classes */
+			.mono-block{font-family:Consolas,Menlo,monospace;font-size:0.85em;line-height:1.5;overflow-x:auto;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:1em;}
+			.result-table td{font-family:Consolas,Menlo,monospace;}
+		</style>
+	</head>
+	<body class="is-preload">
+		<!-- Wrapper -->
+			<div id="wrapper">
+				<!-- Header -->
+					<header id="header">
+						<a href="index.html" class="logo">Home</a>
+					</header>
+
+				<!-- Nav -->
+					<nav id="nav">
+						<ul class="links">
+							<li><a href="index.html">Home</a></li>
+							<li><a href="resume.html">Resume</a></li>
+							<li><a href="FPGA_&_ML.html">FPGA & ML Acceleration</a></li>
+							<li class="active"><a href="Attention_Accelerator.html">Attention Accelerator</a></li>
+							<li><a href="Robot_Summer.html">Robot Summer </a></li>
+							<li><a href="Football_CV.html"> Football CV</a></li>
+							<li><a href="publication.html">Transistor Publication</a></li>
+							<li><a href="Blog.html">Blog</a></li>
+						</ul>
+						<ul class="icons">
+							<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" class="icon brands alt fa-linkedin"><span class="label">LinkedIn</span></a></li>
+									<li><a href="https://github.com/youssefelbaz32" target="_blank" class="icon brands alt fa-github"><span class="label">GitHub</span></a></li>
+						</ul>
+					</nav>
+
+				<!-- Main -->
+					<div id="main">
+
+						<!-- Post -->
+							<section class="post">
+								<header class="major">
+									<h1>Attention Accelerator:<br />
+									Python &rarr; CUDA &rarr; RTL</h1>
+									<p>I am building a single-head scaled dot-product attention engine &mdash; the core math behind every transformer &mdash; from a Python reference all the way down to synthesizable SystemVerilog, rebuilding the exact same operation at six levels of abstraction and diffing each one against the last.</p>
+								</header>
+								<div class="image main"><img src="images/aa_dataflow.svg" alt="Attention dataflow: Q, K, V flow through QK-transpose scaled by root-d, softmax, and PV to produce output O" /></div>
+
+								<p>Attention is three matrix operations. Given queries <b>Q</b>, keys <b>K</b> and values <b>V</b>, you compute a score matrix, turn it into a probability distribution with softmax, and use those probabilities to blend the values:</p>
+								<pre class="mono-block">S = Q &middot; K&#8868; / &#8730;d        // token-by-token scores
+P = softmax(S)          // each row sums to 1
+O = P &middot; V               // weighted blend of the value rows</pre>
+								<p>That math is simple enough to check by hand at toy dimensions, which is exactly the point. I run everything at N = d = d_v = 4 with a fixed random seed so the inputs never drift. When a lower level disagrees with the golden model, it is always a real bug in my code, never a change in the data.</p>
+
+								<h2>Why build it six times</h2>
+								<p>The goal is not another attention library &mdash; PyTorch already has one. The goal is to understand the operation deeply enough to implement it on hardware, and to build the verification discipline that hardware demands. Each level strips away an abstraction and forces me to own something the level above hid from me: floating point, then fixed-point arithmetic, then GPU parallelism, then the memory hierarchy, then bit-level RTL and handshaking.</p>
+								<div class="image main"><img src="images/aa_levels.svg" alt="Six abstraction levels from Python float golden model down to FlashAttention-lite, each with status and error metric" /></div>
+
+								<h2>Architecture &amp; results so far</h2>
+								<p>Every level is validated against the one above it, so I always have an unambiguous oracle. Here is where each stage stands today:</p>
+								<div class="table-wrapper">
+									<table class="result-table">
+										<thead>
+											<tr><th>Level</th><th>What it is</th><th>Result</th><th>Status</th></tr>
+										</thead>
+										<tbody>
+											<tr><td>M1</td><td>Python float64 golden model</td><td>self-checking reference (softmax rows sum to 1)</td><td>Done</td></tr>
+											<tr><td>M2</td><td>Python Q8.8 fixed-point twin</td><td>max abs err <b>0.00631</b> vs golden (~0.6%)</td><td>Done</td></tr>
+											<tr><td>M3</td><td>CUDA naive kernel (float32)</td><td>max abs err <b>1.192093e-07</b> = the float32 floor (2<sup>-23</sup>)</td><td>Done</td></tr>
+											<tr><td>M4</td><td>CUDA tiled kernel (shared memory)</td><td>max abs err <b>1.192093e-07</b>, bit-identical to M3</td><td>Done</td></tr>
+											<tr><td>M5</td><td>SystemVerilog RTL core (Q8.8)</td><td>dot4 MAC verified (basic / signed / saturate); QK&#8868; engine next</td><td>In progress</td></tr>
+											<tr><td>M8</td><td>FlashAttention-lite (online softmax)</td><td>fuse the passes, never store the full S matrix</td><td>Planned</td></tr>
+										</tbody>
+									</table>
+								</div>
+
+								<p>The two CUDA numbers are the ones I am most proud of. <b>1.192093e-07 is exactly float32 machine epsilon</b> (2<sup>-23</sup>). Because I compute the golden model in float64 and cast the exported inputs to float32, that value is the theoretical best a perfect kernel can hit &mdash; there is no accuracy left to chase. Getting there twice, once naive and once tiled, proves the kernels are correct, not just close.</p>
+
+								<h2>The fixed-point path to hardware</h2>
+								<p>FPGAs do not do floating point for free, so before writing a line of HDL I built a Q8.8 fixed-point twin of the model in Python: real numbers scaled by 256 and stored as signed 16-bit integers. That let me quote a concrete <b>0.6% worst-case error budget</b> up front, and it surfaced a classic hardware bug where it is cheap to see &mdash; quantizing a normalized softmax row breaks its normalization (row sums drift to 255&ndash;257 instead of a clean 256). That informs whether the RTL needs a renormalization stage or more fraction bits.</p>
+								<p>The RTL now under way (M5) is a Q8.8, 16-bit signed datapath with a valid/ready handshake on every module &mdash; the same handshake that <i>is</i> AXI4-Stream, so it drops straight into a streaming design later. The first module, a time-multiplexed dot-product MAC (<code>dot4</code>), is verified in simulation across basic, signed, and saturating cases. The QK&#8868; engine that sequences it over all token pairs is in progress.</p>
+
+								<h2>Toolchain</h2>
+								<p>Python / NumPy for the golden and fixed-point models; CUDA C++ compiled with <code>nvcc</code> for the GPU kernels (developed on an M1 Mac, run on a separate GPU machine via a byte-exact <code>.npy</code> data bridge); SystemVerilog targeting a Xilinx/AMD FPGA through Vivado, with XSim for simulation and XDC constraints. The roadmap continues into host&harr;FPGA UART communication with a packet-parser FSM (M6), on-hardware bring-up and timing closure (M7), and finally a FlashAttention-lite online-softmax variant (M8).</p>
+
+								<h2>Read the full build log</h2>
+								<p>I keep a running dev-log with every milestone, every bug, and the lessons from each one &mdash; the honest version, mistakes included.</p>
+								<ul class="actions">
+									<li><a href="Blog.html" class="button large">Read the Blog</a></li>
+								</ul>
+
+							</section>
+
+					</div>
+
+				<!-- Footer -->
+				<footer id="footer">
+
+					<section class="contact">
+						<section class="alt">
+							<h3>Address</h3>
+							<p>5960 Student Union Blvd<br />
+							Vancouver, BC V6T 1Z1</p>
+						</section>
+						<section>
+							<h3>Phone</h3>
+							<p><a href="#">(236) 339-3012</a></p>
+						</section>
+						<section>
+							<h3>Email</h3>
+							<p><a href="#">youssefelbaz32@gmail.com</a></p>
+						</section>
+						<section>
+							<h3>Social</h3>
+							<ul class="icons alt">
+								<li><a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" class="icon brands alt fa-linkedin"><span class="label">LinkedIn</span></a></li>
+								<li><a href="https://github.com/youssefelbaz32" target="_blank" class="icon brands alt fa-github"><span class="label">GitHub</span></a></li>
+							</ul>
+						</section>
+					</section>
+				</footer>
+
+				<!-- Copyright -->
+					<div id="copyright">
+						<ul><li>&copy; Untitled</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li></ul>
+					</div>
+
+			</div>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/jquery.scrolly.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+	</body>
+</html>
