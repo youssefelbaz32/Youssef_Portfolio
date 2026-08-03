@@ -77,6 +77,7 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 
 									<h2>Architecture &amp; results so far</h2>
 								<p>Every level is validated against the one above it, so I always have an unambiguous oracle. Here is where each stage stands today:</p>
+								<div class="image main"><img src="images/qkt_arch.svg" alt="Parallel QK-transpose engine block diagram: four dot4 MAC units compute one score row at once with valid-ready handshake and 1 over root d scaling" /></div>
 								<div class="table-wrapper">
 									<table class="result-table">
 										<thead>

@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 610" role="img" aria-label="Block diagram of the parallel QK-transpose engine: four dot4 units compute one score row at once">
+  <style>
+    .b-title{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:600;fill:#dce4ee}
+    .b-sub{font-family:system-ui,sans-serif;font-size:11px;fill:#8493a4}
+    .port{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;fill:#8493a4}
+    .anno{font-family:system-ui,sans-serif;font-size:12px;fill:#8493a4}
+    .anno-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;fill:#8493a4}
+    .bg{fill:#141b24;stroke:#33404f;stroke-width:1.5}
+    .blk{fill:#161e28;stroke:#33404f;stroke-width:1.5}
+    .unit{fill:#0f2a29;stroke:#2dd4bf;stroke-width:1.75}
+    .note{fill:#131c26;stroke:#33404f;stroke-width:1;stroke-dasharray:3 3}
+    .data-wire{stroke:#2dd4bf;stroke-width:1.75;fill:none}
+    .ctrl-wire{stroke:#f59e0b;stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+    .ah-data{fill:#2dd4bf}
+    .ah-ctrl{fill:#f59e0b}
+    .div{stroke:#33404f;stroke-dasharray:2 3}
+    @media (prefers-color-scheme:light){
+      .b-title{fill:#1b2430}
+      .b-sub,.port,.anno,.anno-mono{fill:#5b6675}
+      .bg{fill:#ffffff;stroke:#c4ccd8}
+      .blk{fill:#ffffff;stroke:#c4ccd8}
+      .unit{fill:#e6f6f3;stroke:#0f9d8f}
+      .note{fill:#f0f3f7;stroke:#c4ccd8}
+      .data-wire{stroke:#0f9d8f}
+      .ctrl-wire{stroke:#d97706}
+      .ah-data{fill:#0f9d8f}
+      .ah-ctrl{fill:#d97706}
+      .div{stroke:#c4ccd8}
+    }
+  </style>
+  <defs>
+    <marker id="ah-data" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+      <path class="ah-data" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+    <marker id="ah-ctrl" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+      <path class="ah-ctrl" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="4" y="4" width="1112" height="602" rx="12"/>
+
+  <!-- CONTROL BAND -->
+  <rect class="blk" x="360" y="24" width="300" height="46" rx="7"/>
+  <text class="b-title" x="510" y="44" text-anchor="middle">CONTROL FSM</text>
+  <text class="b-sub" x="510" y="60" text-anchor="middle">IDLE to ISSUE to WAIT to DONE</text>
+  <rect class="blk" x="700" y="24" width="132" height="46" rx="7"/>
+  <text class="b-title" x="766" y="44" text-anchor="middle">row_i</text>
+  <text class="b-sub" x="766" y="60" text-anchor="middle">0 .. N-1</text>
+  <path class="ctrl-wire" d="M420,70 L420,114 L455,114" marker-end="url(#ah-ctrl)"/>
+  <text class="anno-mono" x="424" y="106">d4_in_valid</text>
+  <path class="ctrl-wire" d="M766,70 L766,96 L255,96 L255,90" marker-end="url(#ah-ctrl)"/>
+  <text class="anno-mono" x="470" y="92" text-anchor="middle">row_i selects q_mem row</text>
+
+  <!-- INPUTS -->
+  <rect class="blk" x="24" y="106" width="116" height="44" rx="6"/>
+  <text class="b-title" x="82" y="126" text-anchor="middle">Q_flat</text>
+  <text class="b-sub" x="82" y="141" text-anchor="middle">[N*D*DW]</text>
+  <rect class="blk" x="24" y="342" width="116" height="44" rx="6"/>
+  <text class="b-title" x="82" y="362" text-anchor="middle">K_flat</text>
+  <text class="b-sub" x="82" y="377" text-anchor="middle">[N*D*DW]</text>
+  <text class="anno-mono" x="24" y="96">in_valid / in_ready</text>
+
+  <!-- REGISTER FILES -->
+  <rect class="blk" x="176" y="68" width="150" height="82" rx="7"/>
+  <text class="b-title" x="251" y="104" text-anchor="middle">q_mem[N]</text>
+  <text class="b-sub" x="251" y="120" text-anchor="middle">each row = D x Q8.8</text>
+  <path class="data-wire" d="M140,128 L176,128" marker-end="url(#ah-data)"/>
+  <rect class="blk" x="176" y="156" width="140" height="392" rx="7"/>
+  <text class="b-title" x="246" y="178" text-anchor="middle">k_mem[N]</text>
+  <line class="div" x1="176" y1="252" x2="316" y2="252"/>
+  <line class="div" x1="176" y1="348" x2="316" y2="348"/>
+  <line class="div" x1="176" y1="444" x2="316" y2="444"/>
+  <text class="port" x="186" y="218">k row 0</text>
+  <text class="port" x="186" y="314">k row 1</text>
+  <text class="port" x="186" y="410">k row 2</text>
+  <text class="port" x="186" y="506">k row 3</text>
+  <path class="data-wire" d="M140,364 L158,364 L158,306 L176,306" marker-end="url(#ah-data)"/>
+
+  <!-- q broadcast spine -->
+  <path class="data-wire" d="M326,116 L400,116 L400,516"/>
+  <path class="data-wire" d="M400,208 L452,208" marker-end="url(#ah-data)"/>
+  <path class="data-wire" d="M400,304 L452,304" marker-end="url(#ah-data)"/>
+  <path class="data-wire" d="M400,400 L452,400" marker-end="url(#ah-data)"/>
+  <path class="data-wire" d="M400,496 L452,496" marker-end="url(#ah-data)"/>
+  <text class="anno" x="408" y="156">q_mem[row_i]</text>
+  <text class="anno" x="408" y="172">broadcast</text>
+
+  <!-- k per-column -->
+  <path class="data-wire" d="M316,228 L452,228" marker-end="url(#ah-data)"/>
+  <path class="data-wire" d="M316,324 L452,324" marker-end="url(#ah-data)"/>
+  <path class="data-wire" d="M316,420 L452,420" marker-end="url(#ah-data)"/>
+  <path class="data-wire" d="M316,516 L452,516" marker-end="url(#ah-data)"/>
+
+  <!-- 4 dot4 UNITS -->
+  <rect class="unit" x="452" y="192" width="176" height="74" rx="8"/>
+  <text class="b-title" x="540" y="222" text-anchor="middle">dot4</text>
+  <text class="b-sub" x="540" y="239" text-anchor="middle">col j = 0</text>
+  <text class="port" x="458" y="210">a_flat</text>
+  <text class="port" x="458" y="259">b_flat</text>
+  <rect class="unit" x="452" y="288" width="176" height="74" rx="8"/>
+  <text class="b-title" x="540" y="318" text-anchor="middle">dot4</text>
+  <text class="b-sub" x="540" y="335" text-anchor="middle">col j = 1</text>
+  <text class="port" x="458" y="306">a_flat</text>
+  <text class="port" x="458" y="355">b_flat</text>
+  <rect class="unit" x="452" y="384" width="176" height="74" rx="8"/>
+  <text class="b-title" x="540" y="414" text-anchor="middle">dot4</text>
+  <text class="b-sub" x="540" y="431" text-anchor="middle">col j = 2</text>
+  <text class="port" x="458" y="402">a_flat</text>
+  <text class="port" x="458" y="451">b_flat</text>
+  <rect class="unit" x="452" y="480" width="176" height="74" rx="8"/>
+  <text class="b-title" x="540" y="510" text-anchor="middle">dot4</text>
+  <text class="b-sub" x="540" y="527" text-anchor="middle">col j = 3</text>
+  <text class="port" x="458" y="498">a_flat</text>
+  <text class="port" x="458" y="547">b_flat</text>
+
+  <!-- SCALE / s_mem -->
+  <g>
+    <path class="data-wire" d="M628,229 L662,229" marker-end="url(#ah-data)"/>
+    <rect class="blk" x="662" y="211" width="70" height="36" rx="6"/>
+    <text class="b-title" x="697" y="228" text-anchor="middle" style="font-size:12px">/ sqrt d</text>
+    <text class="b-sub" x="697" y="241" text-anchor="middle">&gt;&gt;&gt;</text>
+    <path class="data-wire" d="M732,229 L772,229" marker-end="url(#ah-data)"/>
+  </g>
+  <g>
+    <path class="data-wire" d="M628,325 L662,325" marker-end="url(#ah-data)"/>
+    <rect class="blk" x="662" y="307" width="70" height="36" rx="6"/>
+    <text class="b-title" x="697" y="324" text-anchor="middle" style="font-size:12px">/ sqrt d</text>
+    <text class="b-sub" x="697" y="337" text-anchor="middle">&gt;&gt;&gt;</text>
+    <path class="data-wire" d="M732,325 L772,325" marker-end="url(#ah-data)"/>
+  </g>
+  <g>
+    <path class="data-wire" d="M628,421 L662,421" marker-end="url(#ah-data)"/>
+    <rect class="blk" x="662" y="403" width="70" height="36" rx="6"/>
+    <text class="b-title" x="697" y="420" text-anchor="middle" style="font-size:12px">/ sqrt d</text>
+    <text class="b-sub" x="697" y="433" text-anchor="middle">&gt;&gt;&gt;</text>
+    <path class="data-wire" d="M732,421 L772,421" marker-end="url(#ah-data)"/>
+  </g>
+  <g>
+    <path class="data-wire" d="M628,517 L662,517" marker-end="url(#ah-data)"/>
+    <rect class="blk" x="662" y="499" width="70" height="36" rx="6"/>
+    <text class="b-title" x="697" y="516" text-anchor="middle" style="font-size:12px">/ sqrt d</text>
+    <text class="b-sub" x="697" y="529" text-anchor="middle">&gt;&gt;&gt;</text>
+    <path class="data-wire" d="M732,517 L772,517" marker-end="url(#ah-data)"/>
+  </g>
+  <text class="anno-mono" x="640" y="191">SQRTD_SH</text>
+
+  <rect class="blk" x="772" y="192" width="150" height="362" rx="7"/>
+  <text class="b-title" x="847" y="366" text-anchor="middle">s_mem[N*N]</text>
+  <text class="b-sub" x="847" y="384" text-anchor="middle">idx = row_i*N + j</text>
+
+  <path class="data-wire" d="M922,373 L968,373" marker-end="url(#ah-data)"/>
+  <rect class="blk" x="968" y="351" width="128" height="46" rx="6"/>
+  <text class="b-title" x="1032" y="371" text-anchor="middle">S_flat</text>
+  <text class="b-sub" x="1032" y="387" text-anchor="middle">[N*N*DW]</text>
+  <text class="anno-mono" x="1096" y="338" text-anchor="end">out_valid / out_ready</text>
+
+  <rect class="note" x="452" y="568" width="368" height="30" rx="6"/>
+  <text class="anno-mono" x="462" y="587">all_in_ready = &amp;d4_in_ready , all_out_valid = &amp;d4_out_valid</text>
+</svg>
