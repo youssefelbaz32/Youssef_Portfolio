@@ -59,7 +59,12 @@
 									Python &rarr; CUDA &rarr; RTL</h1>
 									<p>I am building a single-head scaled dot-product attention engine, the core math behind every transformer, from a Python reference all the way down to synthesizable SystemVerilog, rebuilding the exact same operation at six levels of abstraction and diffing each one against the last.</p>
 								</header>
-								<div class="image main"><img src="images/aa_dataflow.svg" alt="Attention dataflow: Q, K, V flow through QK-transpose scaled by root-d, softmax, and PV to produce output O" /></div>
+								<ul class="actions">
+										<li><a href="https://github.com/youssefelbaz32/flash-attention-accelerator" target="_blank" class="button primary">Code</a></li>
+										<li><a href="Blog.html" class="button">Dev blog</a></li>
+									</ul>
+									<p><b>Result so far:</b> scaled dot-product attention built and cross-verified across NumPy, Q8.8 fixed-point Python, naive and tiled CUDA, and SystemVerilog RTL, each level diffed against the one above. The CUDA kernels agree with the float64 reference to about one float32 epsilon. Benchmarked kernel speedup and achieved bandwidth, plus FPGA fmax, DSP usage, and cycle latency, are in progress and tracked in the status table below.</p>
+									<div class="image main"><img src="images/aa_dataflow.svg" alt="Attention dataflow: Q, K, V flow through QK-transpose scaled by root-d, softmax, and PV to produce output O" /></div>
 
 								<p>Attention is three matrix operations. Given queries <b>Q</b>, keys <b>K</b> and values <b>V</b>, you compute a score matrix, turn it into a probability distribution with softmax, and use those probabilities to blend the values:</p>
 								<pre class="mono-block">S = Q &middot; K&#8868; / &#8730;d        // token-by-token scores
@@ -72,7 +77,7 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 								<div class="image main"><img src="images/aa_levels.svg" alt="Six abstraction levels from Python float golden model down to FlashAttention-lite, each with status and error metric" /></div>
 
 								<h2>How to think about the cost</h2>
-									<p>The lens I carry across every level is the roofline question: is this step limited by <b>compute</b> (doing FLOPs) or by <b>memory</b> (moving bytes)? Attention is famously memory-bound, because it moves far more data than arithmetic it performs. That single idea explains most of the design work below. The naive GPU kernel re-reads every key and value row once per query, so it moves N times more bytes than necessary; tiling loads each input to on-chip memory once, raising arithmetic intensity (FLOPs per byte) and pushing the kernel toward the compute roof. On the FPGA the same tension returns as an area-versus-cycles trade: one multiplier reused over D cycles is small and slow, D multipliers in parallel are large and fast.</p>
+									<p>The lens I carry across every level is the roofline question: is this step limited by <b>compute</b> (doing FLOPs) or by <b>memory</b> (moving bytes)? Many attention configurations, especially decode and any kernel that materializes the intermediate score matrix, are limited by memory traffic more than arithmetic; the balance shifts with shape, datatype, and hardware. That lens explains most of the design work below. The naive GPU kernel re-reads every key and value row once per query, so it moves N times more bytes than necessary; a single-block tiled kernel stages each input tile into on-chip memory once and reuses it, raising arithmetic intensity (FLOPs per byte). At realistic sizes the full tensors do not fit on chip, so tiles are re-loaded across thread blocks and the win is fewer global reads per tile rather than a single global load. On the FPGA the same tension returns as an area-versus-cycles trade: one multiplier reused over D cycles is small and slow, D multipliers in parallel are large and fast.</p>
 									<div class="callout idea"><span class="k">Key idea</span><p>Correctness first, then cost. Each level is proven against the one above (same seed, same inputs) before I reason about whether it is compute-bound or memory-bound. A performance win that moves the answer is not a win.</p></div>
 
 									<h2>Architecture &amp; results so far</h2>
@@ -94,7 +99,7 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 									</table>
 								</div>
 
-								<p>The two CUDA numbers are the ones I am most proud of. <b>1.192093e-07 is exactly float32 machine epsilon</b> (2<sup>-23</sup>). Because I compute the golden model in float64 and cast the exported inputs to float32, that value is the theoretical best a perfect kernel can hit, there is no accuracy left to chase. Getting there twice, once naive and once tiled, proves the kernels are correct, not just close.</p>
+								<p>The two CUDA numbers are the ones I am most proud of. <b>1.192093e-07 is about one float32 epsilon near unity</b> (2<sup>-23</sup> is the ULP spacing near 1.0). Because I compute the golden model in float64 and cast the exported inputs to float32, a difference this small means close numerical agreement for this test case, not a bug in the kernel. Getting there twice, once naive and once tiled, is strong evidence the kernels are correct, not just close.</p>
 
 								<h2>The fixed-point path to hardware</h2>
 								<p>FPGAs do not do floating point for free, so before writing a line of HDL I built a Q8.8 fixed-point twin of the model in Python: real numbers scaled by 256 and stored as signed 16-bit integers. The one rule the whole thing lives on is that multiplying two Q8.8 numbers doubles the fraction bits to Q16.16, so after every integer matmul I divide the accumulator back down by SCALE&sup2;:</p>
@@ -102,7 +107,7 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 S_raw   = Qq @ Kq.T                    # integer matmul -&gt; Q16.16
 S_fixed = (S_raw / (SCALE * SCALE)) / np.sqrt(d)   # /SCALE^2, then /sqrt(d)</code></pre>
 									<p>That let me quote a concrete <b>0.6% worst-case error budget</b> up front, and it surfaced a classic hardware bug where it is cheap to see: quantizing a normalized softmax row breaks its normalization (row sums drift to 255-257 instead of a clean 256). That informs whether the RTL needs a renormalization stage or more fraction bits.</p>
-								<p>The RTL now under way (M5) is a Q8.8, 16-bit signed datapath with a valid/ready handshake on every module, the same handshake that <i>is</i> AXI4-Stream, so it drops straight into a streaming design later. The first module is a time-multiplexed dot-product MAC (<code>dot4</code>): it accumulates the raw Q16.16 products in a wide accumulator, then shifts back to Q8.8 with an arithmetic shift (to keep the sign bit) and saturates exactly once at the end.</p>
+								<p>The RTL now under way (M5) is a Q8.8, 16-bit signed datapath with a valid/ready handshake on every module, the same handshake semantics AXI4-Stream uses, so wrapping these blocks as AXI4-Stream later is straightforward. The first module is a time-multiplexed dot-product MAC (<code>dot4</code>): it accumulates the raw Q16.16 products in a wide accumulator, then shifts back to Q8.8 with an arithmetic shift (to keep the sign bit) and saturates exactly once at the end.</p>
 									<pre class="mono-block"><code>assign shifted = acc &gt;&gt;&gt; FRAC;         // Q16.16 -&gt; Q8.8, keep the sign bit
 always_comb begin
     if      (shifted &gt; sMAX) s = sMAX;  // clamp high
@@ -128,15 +133,6 @@ end</code></pre>
 				<footer id="footer">
 
 					<section class="contact">
-						<section class="alt">
-							<h3>Address</h3>
-							<p>5960 Student Union Blvd<br />
-							Vancouver, BC V6T 1Z1</p>
-						</section>
-						<section>
-							<h3>Phone</h3>
-							<p><a href="#">(236) 339-3012</a></p>
-						</section>
 						<section>
 							<h3>Email</h3>
 							<p><a href="#">youssefelbaz32@gmail.com</a></p>

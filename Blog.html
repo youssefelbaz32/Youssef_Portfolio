@@ -92,10 +92,10 @@ else if (shifted &lt; sMIN) s = sMIN;      // clamp low
 else    s = shifted[DW-1:0];            // in range</code></pre>
 
 									<h3>The interface is the point</h3>
-									<p>Every module carries a valid/ready handshake, decoded straight from the FSM state: accept only in IDLE, result valid only in DONE. This is not incidental. Valid/ready <i>is</i> AXI4-Stream, so these blocks compose into a streaming datapath later without rework.</p>
+									<p>Every module carries a valid/ready handshake, decoded straight from the FSM state: accept only in IDLE, result valid only in DONE. This is not incidental: valid/ready is the handshake AXI4-Stream is built on, so wrapping these blocks as AXI4-Stream later is straightforward.</p>
 									<pre class="mono-block"><code>assign in_ready  = (curr_state == IDLE);
 assign out_valid = (curr_state == DONE);</code></pre>
-									<p>The testbench drives known vectors through the full handshake and checks basic, signed, and saturating cases: <code>[1,2,3,4]&middot;[1,1,1,1]=10 -&gt; 2560</code>, a signed dot to 1024, and an overflow that clamps to 32767. All three pass. The QK&#8868; engine on top instantiates four <code>dot4</code> units in parallel, one per column: the same query row is broadcast to all four while each pairs it with a different key row, so a full score row lands every pass and the matrix takes N passes instead of N&times;N. Each result is scaled by <code>1/&#8730;d</code> with a right shift (the dims are powers of two). That controller is what I am wiring now.</p>
+									<p>The testbench drives known vectors through the full handshake and checks basic, signed, and saturating cases: <code>[1,2,3,4]&middot;[1,1,1,1]=10 -&gt; 2560</code>, a signed dot to 1024, and an overflow that clamps to 32767. All three pass. The QK&#8868; engine on top instantiates four <code>dot4</code> units in parallel, one per column: the same query row is broadcast to all four while each pairs it with a different key row, so a full score row lands every pass and the matrix takes N passes instead of N&times;N. Each result is scaled by <code>1/&#8730;d</code> with a right shift, which is exact only when &#8730;d is itself a power of two, i.e. d is a power of four (4, 16, 64); dims like 8, 32, or 128 would need a fixed-point multiply instead. That controller is what I am wiring now.</p>
 									<div class="image fit"><img src="images/qkt_arch.svg" alt="Parallel QK-transpose engine: four dot4 units each compute one column of a score row, fed a broadcast query row and per-column key rows, then scaled by 1 over root d into s_mem" /></div>
 
 									<div class="callout take"><span class="k">Takeaway</span><p>Four dot4 units in parallel trade area for throughput: a full score row is computed per pass, so the engine runs in about N passes rather than N&sup2;. That is 4x the multipliers for 4x the row throughput versus one time-multiplexed unit, which stays the smaller-area fallback.</p></div>
@@ -122,14 +122,14 @@ assign out_valid = (curr_state == DONE);</code></pre>
 								<article>
 									<span class="entry-date">2026-08-01</span><span class="tag done">M4 &middot; done</span>
 									<h2>Tiling is an arithmetic-intensity play</h2>
-									<div class="callout idea"><span class="k">Key idea</span><p>Attention at scale is memory-bound: it moves far more bytes than it does FLOPs. The tiled kernel does not change a single arithmetic operation. It changes <i>where the data lives</i> during compute, which raises arithmetic intensity (FLOPs per byte read from global memory) and slides the kernel toward the compute roof.</p></div>
+									<div class="callout idea"><span class="k">Key idea</span><p>Many attention configurations are memory-bound: they move far more bytes than they do FLOPs, though the balance shifts with shape, datatype, and hardware. The tiled kernel does not change a single arithmetic operation. It changes <i>where the data lives</i> during compute, which raises arithmetic intensity (FLOPs per byte read from global memory) and slides the kernel toward the compute roof.</p></div>
 
 									<h3>Count the bytes, not the FLOPs</h3>
 									<p>At N = d = d_v = 4 with no caching, the naive kernel has each of N threads read all of Q, K and V. Each tensor is read N&middot;N&middot;D = 64 times, so 192 global reads, against only 3&middot;16 = 48 distinct elements. That is 4&times; redundancy, which is exactly N: every key and value row is re-fetched once per query. The FLOP count is unchanged, so intensity is 4&times; lower than it needs to be, and global memory (~400 to 600 cycles) is the wall.</p>
 									<pre class="mono-block"><code>naive:  Q,K,V each read N*N*D = 64  -&gt; 192 reads + 16 writes
 distinct input elements          = 3 * 16 = 48
 redundancy = 192 / 48            = 4x  (= N)</code></pre>
-									<p>Tiling loads those 48 elements into on-chip shared memory (~20 to 30 cycles) once, then every thread reuses them. As N grows, the naive N&sup2; traffic terms collapse toward N, and the win grows with the problem.</p>
+									<p>In this single-block case, tiling stages those 48 elements into on-chip shared memory (~20 to 30 cycles) once, then every thread reuses them. At realistic sizes the full tensors do not fit in shared memory, so different thread blocks re-load tiles; the win becomes fewer global reads per tile rather than a single global load, and it still grows with N.</p>
 
 									<h3>The one new hazard</h3>
 									<p>Cooperative load has thread i copy row i into the shared tiles; then a block-wide <code>__syncthreads()</code> barrier; then the guarded compute. Every thread must reach every barrier, so you never <code>return</code> before one.</p>
@@ -189,7 +189,7 @@ for (int j = 0; j &lt; N; j++) {              // scores: dot(Q[i],K[j]) / sqrt(D
 attention_kernel&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(dQ, dK, dV, dO);
 CUDA_CHECK(cudaGetLastError());            // launch-config error
 CUDA_CHECK(cudaDeviceSynchronize());       // runtime error + barrier before D2H</code></pre>
-									<div class="callout take"><span class="k">Takeaway</span><p><b>Max abs err 1.192093e-07</b>, exactly float32 machine epsilon (2<sup>-23</sup>), the theoretical floor against an f64-then-f32 golden. When you hit the precision floor, the kernel is correct and there is nothing left to chase.</p></div>
+									<div class="callout take"><span class="k">Takeaway</span><p><b>Max abs err 1.192093e-07</b>, about one float32 epsilon near unity (2<sup>-23</sup> is the ULP spacing near 1.0). Against an f64-then-f32 golden, a difference this small means close numerical agreement for this test case, strong evidence the kernel is correct rather than a universal lower bound on error.</p></div>
 
 									<h3>Performance (to measure)</h3>
 									<p>Expectation: at these dims the kernel is memory-bound and latency-dominated, so raw numbers are mostly a baseline for the tiled version to beat at larger N.</p>
@@ -288,15 +288,6 @@ assert np.allclose(P.sum(axis=1), 1.0)      # first test in the project</code></
 				<footer id="footer">
 
 					<section class="contact">
-						<section class="alt">
-							<h3>Address</h3>
-							<p>5960 Student Union Blvd<br />
-							Vancouver, BC V6T 1Z1</p>
-						</section>
-						<section>
-							<h3>Phone</h3>
-							<p><a href="#">(236) 339-3012</a></p>
-						</section>
 						<section>
 							<h3>Email</h3>
 							<p><a href="#">youssefelbaz32@gmail.com</a></p>
