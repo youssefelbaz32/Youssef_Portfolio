@@ -52,7 +52,7 @@
 								<header class="major">
 									<h1>Attention Accelerator:<br />
 									Python &rarr; CUDA &rarr; RTL</h1>
-									<p>I am building a single-head scaled dot-product attention engine &mdash; the core math behind every transformer &mdash; from a Python reference all the way down to synthesizable SystemVerilog, rebuilding the exact same operation at six levels of abstraction and diffing each one against the last.</p>
+									<p>I am building a single-head scaled dot-product attention engine, the core math behind every transformer, from a Python reference all the way down to synthesizable SystemVerilog, rebuilding the exact same operation at six levels of abstraction and diffing each one against the last.</p>
 								</header>
 								<div class="image main"><img src="images/aa_dataflow.svg" alt="Attention dataflow: Q, K, V flow through QK-transpose scaled by root-d, softmax, and PV to produce output O" /></div>
 
@@ -63,7 +63,7 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 								<p>That math is simple enough to check by hand at toy dimensions, which is exactly the point. I run everything at N = d = d_v = 4 with a fixed random seed so the inputs never drift. When a lower level disagrees with the golden model, it is always a real bug in my code, never a change in the data.</p>
 
 								<h2>Why build it six times</h2>
-								<p>The goal is not another attention library &mdash; PyTorch already has one. The goal is to understand the operation deeply enough to implement it on hardware, and to build the verification discipline that hardware demands. Each level strips away an abstraction and forces me to own something the level above hid from me: floating point, then fixed-point arithmetic, then GPU parallelism, then the memory hierarchy, then bit-level RTL and handshaking.</p>
+								<p>The goal is not another attention library (PyTorch already has one). The goal is to understand the operation deeply enough to implement it on hardware, and to build the verification discipline that hardware demands. Each level strips away an abstraction and forces me to own something the level above hid from me: floating point, then fixed-point arithmetic, then GPU parallelism, then the memory hierarchy, then bit-level RTL and handshaking.</p>
 								<div class="image main"><img src="images/aa_levels.svg" alt="Six abstraction levels from Python float golden model down to FlashAttention-lite, each with status and error metric" /></div>
 
 								<h2>Architecture &amp; results so far</h2>
@@ -84,17 +84,28 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 									</table>
 								</div>
 
-								<p>The two CUDA numbers are the ones I am most proud of. <b>1.192093e-07 is exactly float32 machine epsilon</b> (2<sup>-23</sup>). Because I compute the golden model in float64 and cast the exported inputs to float32, that value is the theoretical best a perfect kernel can hit &mdash; there is no accuracy left to chase. Getting there twice, once naive and once tiled, proves the kernels are correct, not just close.</p>
+								<p>The two CUDA numbers are the ones I am most proud of. <b>1.192093e-07 is exactly float32 machine epsilon</b> (2<sup>-23</sup>). Because I compute the golden model in float64 and cast the exported inputs to float32, that value is the theoretical best a perfect kernel can hit, there is no accuracy left to chase. Getting there twice, once naive and once tiled, proves the kernels are correct, not just close.</p>
 
 								<h2>The fixed-point path to hardware</h2>
-								<p>FPGAs do not do floating point for free, so before writing a line of HDL I built a Q8.8 fixed-point twin of the model in Python: real numbers scaled by 256 and stored as signed 16-bit integers. That let me quote a concrete <b>0.6% worst-case error budget</b> up front, and it surfaced a classic hardware bug where it is cheap to see &mdash; quantizing a normalized softmax row breaks its normalization (row sums drift to 255&ndash;257 instead of a clean 256). That informs whether the RTL needs a renormalization stage or more fraction bits.</p>
-								<p>The RTL now under way (M5) is a Q8.8, 16-bit signed datapath with a valid/ready handshake on every module &mdash; the same handshake that <i>is</i> AXI4-Stream, so it drops straight into a streaming design later. The first module, a time-multiplexed dot-product MAC (<code>dot4</code>), is verified in simulation across basic, signed, and saturating cases. The QK&#8868; engine that sequences it over all token pairs is in progress.</p>
+								<p>FPGAs do not do floating point for free, so before writing a line of HDL I built a Q8.8 fixed-point twin of the model in Python: real numbers scaled by 256 and stored as signed 16-bit integers. The one rule the whole thing lives on is that multiplying two Q8.8 numbers doubles the fraction bits to Q16.16, so after every integer matmul I divide the accumulator back down by SCALE&sup2;:</p>
+									<pre class="mono-block"><code>Qq, Kq = quantize(Q), quantize(K)      # real -&gt; Q8.8 integers (saturated)
+S_raw   = Qq @ Kq.T                    # integer matmul -&gt; Q16.16
+S_fixed = (S_raw / (SCALE * SCALE)) / np.sqrt(d)   # /SCALE^2, then /sqrt(d)</code></pre>
+									<p>That let me quote a concrete <b>0.6% worst-case error budget</b> up front, and it surfaced a classic hardware bug where it is cheap to see: quantizing a normalized softmax row breaks its normalization (row sums drift to 255-257 instead of a clean 256). That informs whether the RTL needs a renormalization stage or more fraction bits.</p>
+								<p>The RTL now under way (M5) is a Q8.8, 16-bit signed datapath with a valid/ready handshake on every module, the same handshake that <i>is</i> AXI4-Stream, so it drops straight into a streaming design later. The first module is a time-multiplexed dot-product MAC (<code>dot4</code>): it accumulates the raw Q16.16 products in a wide accumulator, then shifts back to Q8.8 with an arithmetic shift (to keep the sign bit) and saturates exactly once at the end.</p>
+									<pre class="mono-block"><code>assign shifted = acc &gt;&gt;&gt; FRAC;         // Q16.16 -&gt; Q8.8, keep the sign bit
+always_comb begin
+    if      (shifted &gt; sMAX) s = sMAX;  // clamp high
+    else if (shifted &lt; sMIN) s = sMIN;  // clamp low
+    else    s = shifted[DW-1:0];        // in range
+end</code></pre>
+									<p>It is verified in simulation across basic, signed, and saturating cases. The QK&#8868; engine that reuses this one <code>dot4</code> over all token pairs is in progress. Full step-by-step write-ups for every level are on the <a href="Blog.html">blog</a>.</p>
 
 								<h2>Toolchain</h2>
 								<p>Python / NumPy for the golden and fixed-point models; CUDA C++ compiled with <code>nvcc</code> for the GPU kernels (developed on an M1 Mac, run on a separate GPU machine via a byte-exact <code>.npy</code> data bridge); SystemVerilog targeting a Xilinx/AMD FPGA through Vivado, with XSim for simulation and XDC constraints. The roadmap continues into host&harr;FPGA UART communication with a packet-parser FSM (M6), on-hardware bring-up and timing closure (M7), and finally a FlashAttention-lite online-softmax variant (M8).</p>
 
 								<h2>Read the full build log</h2>
-								<p>I keep a running dev-log with every milestone, every bug, and the lessons from each one &mdash; the honest version, mistakes included.</p>
+								<p>I keep a running dev-log with every milestone, every bug, and the lessons from each one: the honest version, mistakes included.</p>
 								<ul class="actions">
 									<li><a href="Blog.html" class="button large">Read the Blog</a></li>
 								</ul>
