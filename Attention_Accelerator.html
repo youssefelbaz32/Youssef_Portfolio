@@ -16,6 +16,11 @@
 			/* small, self-contained additions; do not override template classes */
 			.mono-block{font-family:Consolas,Menlo,monospace;font-size:0.85em;line-height:1.5;overflow-x:auto;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:1em;}
 			.result-table td{font-family:Consolas,Menlo,monospace;}
+			.callout{padding:0.9em 1.2em;border-radius:0 6px 6px 0;margin:1.6em 0;}
+			.callout .k{display:block;font-family:Consolas,Menlo,monospace;font-size:0.68em;letter-spacing:0.16em;text-transform:uppercase;margin-bottom:0.35em;}
+			.callout p{margin:0;}
+			.callout.idea{border-left:3px solid #7bd0ff;background:rgba(123,208,255,0.08);}
+			.callout.idea .k{color:#7bd0ff;}
 		</style>
 	</head>
 	<body class="is-preload">
@@ -66,7 +71,11 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 								<p>The goal is not another attention library (PyTorch already has one). The goal is to understand the operation deeply enough to implement it on hardware, and to build the verification discipline that hardware demands. Each level strips away an abstraction and forces me to own something the level above hid from me: floating point, then fixed-point arithmetic, then GPU parallelism, then the memory hierarchy, then bit-level RTL and handshaking.</p>
 								<div class="image main"><img src="images/aa_levels.svg" alt="Six abstraction levels from Python float golden model down to FlashAttention-lite, each with status and error metric" /></div>
 
-								<h2>Architecture &amp; results so far</h2>
+								<h2>How to think about the cost</h2>
+									<p>The lens I carry across every level is the roofline question: is this step limited by <b>compute</b> (doing FLOPs) or by <b>memory</b> (moving bytes)? Attention is famously memory-bound, because it moves far more data than arithmetic it performs. That single idea explains most of the design work below. The naive GPU kernel re-reads every key and value row once per query, so it moves N times more bytes than necessary; tiling loads each input to on-chip memory once, raising arithmetic intensity (FLOPs per byte) and pushing the kernel toward the compute roof. On the FPGA the same tension returns as an area-versus-cycles trade: one multiplier reused over D cycles is small and slow, D multipliers in parallel are large and fast.</p>
+									<div class="callout idea"><span class="k">Key idea</span><p>Correctness first, then cost. Each level is proven against the one above (same seed, same inputs) before I reason about whether it is compute-bound or memory-bound. A performance win that moves the answer is not a win.</p></div>
+
+									<h2>Architecture &amp; results so far</h2>
 								<p>Every level is validated against the one above it, so I always have an unambiguous oracle. Here is where each stage stands today:</p>
 								<div class="table-wrapper">
 									<table class="result-table">

@@ -20,6 +20,16 @@
 			.tag{display:inline-block;font-family:Consolas,Menlo,monospace;font-size:0.7em;padding:0.15em 0.6em;border:1px solid rgba(255,255,255,0.2);border-radius:4px;margin-left:0.5em;vertical-align:middle;}
 			.tag.done{color:#8fe0b0;border-color:rgba(143,224,176,0.4);}
 			.tag.wip{color:#e6c766;border-color:rgba(230,199,102,0.4);}
+			.callout{padding:0.9em 1.2em;border-radius:0 6px 6px 0;margin:1.6em 0;}
+			.callout .k{display:block;font-family:Consolas,Menlo,monospace;font-size:0.68em;letter-spacing:0.16em;text-transform:uppercase;margin-bottom:0.35em;}
+			.callout p{margin:0;}
+			.callout.idea{border-left:3px solid #7bd0ff;background:rgba(123,208,255,0.08);}
+			.callout.idea .k{color:#7bd0ff;}
+			.callout.take{border-left:3px solid #8fe0b0;background:rgba(143,224,176,0.08);}
+			.callout.take .k{color:#8fe0b0;}
+			.perf-table{font-size:0.9em;}
+			.perf-table code{font-size:0.9em;}
+			.tbd{font-family:Consolas,Menlo,monospace;font-size:0.85em;color:#e6c766;}
 			hr.entry-sep{margin:3em 0;}
 		</style>
 	</head>
@@ -56,84 +66,53 @@
 							<section class="post">
 								<header class="major">
 									<h1>Dev Blog</h1>
-									<p>A running log of what I am building, mostly the <a href="Attention_Accelerator.html">Attention Accelerator</a> right now. The honest version, with the actual implementation steps, the bugs, and the lessons. Newest entries at the top.</p>
+									<p>Notes on building the <a href="Attention_Accelerator.html">Attention Accelerator</a>. Each entry leads with the core idea, reasons through the implementation and its cost (compute-bound vs memory-bound), and ends with a takeaway. Newest first.</p>
 								</header>
 
 								<!-- ============================================================= -->
 								<!-- ADD NEW BLOG ENTRIES HERE (newest first).                     -->
-								<!-- Copy one entry block below, update the date, h2 title,        -->
-								<!-- optional tag (done/wip), and body. Keep hr.entry-sep between. -->
+								<!-- Entry shape: key-idea callout -> reasoning + escaped snippets  -->
+								<!-- -> takeaway callout -> Performance table (metric/method/value).-->
+								<!-- Keep hr.entry-sep between entries. No em dashes.               -->
 								<!-- ============================================================= -->
 
 								<!-- ENTRY: M5 -->
 								<article>
 									<span class="entry-date">2026-08-02</span><span class="tag wip">M5 &middot; in progress</span>
-									<h2>Dropping into RTL: a dot-product MAC in SystemVerilog</h2>
-									<p>This is the milestone the whole project was pointing at. I am now building the attention core in synthesizable SystemVerilog, targeting a Xilinx FPGA through Vivado. The build order inside M5 is qkt, then row-max, softmax, PV, and finally the full naive core. I started at the very bottom: the dot-product MAC that lives inside QK&#8868;.</p>
+									<h2>RTL: what "cost" means once you are on the chip</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>In Python and CUDA, cost is time. In RTL, cost splits into three knobs you trade against each other: <b>area</b> (how many multipliers), <b>cycles</b> (how many clocks per result), and <b>fmax</b> (how fast the clock can run). A dot product can be one multiplier reused over D cycles, or D multipliers in parallel. I chose the small-area version first.</p></div>
 
-									<h3>Step 1: pick the interface and the number format</h3>
-									<p>The unit, <code>dot4</code>, computes <code>sum(a[k]*b[k])</code> for two length-4 Q8.8 vectors. Two decisions frame everything else. First, the data format is Q8.8: a real number times 256, stored as a signed 16-bit integer. Second, the interface is a valid/ready handshake on both sides, because valid/ready <i>is</i> the core of AXI4-Stream and I want these blocks to drop straight into a streaming design later. The whole vector arrives in one input beat, packed LSB-first.</p>
-									<pre class="mono-block"><code>module dot4 #(
-  parameter DW=16, FRAC=8, D=4, ACCW=40
-)(
-  input  logic clk, rst_n,
-  input  logic in_valid,  output logic in_ready,     // input handshake
-  input  logic [D*DW-1:0] a_flat, b_flat,            // two packed Q8.8 vectors
-  output logic out_valid, input  logic out_ready,    // output handshake
-  output logic signed [DW-1:0] s                     // Q8.8 score
-);</code></pre>
+									<h3>The datapath: one multiplier, D cycles</h3>
+									<p>The atom inside QK&#8868; is <code>dot4</code>: a dot product of two length-D Q8.8 vectors. Rather than D parallel multipliers, a four-state FSM (IDLE, LOAD, MAC, DONE) walks a single signed multiplier across the vector, one product per MAC cycle. Q8.8 &times; Q8.8 is a Q16.16 product, so I accumulate the raw Q16.16 in a wide 40-bit register for headroom, then shift back to Q8.8 and saturate exactly once at the end. The shift is arithmetic (<code>&gt;&gt;&gt;</code>) so the sign survives, and the clamp stops an overflow from wrapping silently.</p>
+									<pre class="mono-block"><code>acc &lt;= acc + (a_reg[idx_counter] * b_reg[idx_counter]); // Q16.16 into wide acc
 
-									<h3>Step 2: one multiplier, time-multiplexed by an FSM</h3>
-									<p>Instead of four parallel multipliers I use <b>one signed multiplier reused over four cycles</b>. That is the area-efficient choice, and it is driven by a tiny four-state FSM: IDLE waits for an input beat, LOAD latches both vectors, MAC accumulates one product per cycle, and DONE presents the result until the consumer takes it.</p>
-									<pre class="mono-block"><code>typedef enum logic [1:0] { IDLE, LOAD, MAC, DONE } state_t;
+assign shifted = acc &gt;&gt;&gt; FRAC;         // Q16.16 -&gt; Q8.8, keep the sign bit
+if      (shifted &gt; sMAX) s = sMAX;      // clamp high
+else if (shifted &lt; sMIN) s = sMIN;      // clamp low
+else    s = shifted[DW-1:0];            // in range</code></pre>
 
-always_comb begin
-    next_state = curr_state;
-    case (curr_state)
-        IDLE: if (in_valid &amp;&amp; in_ready)   next_state = LOAD;
-        LOAD:                            next_state = MAC;
-        MAC:  if (idx_counter == D-1)    next_state = DONE;
-        DONE: if (out_valid &amp;&amp; out_ready) next_state = IDLE;
-    endcase
-end</code></pre>
-
-									<h3>Step 3: the datapath, and the fixed-point bookkeeping</h3>
-									<p>On LOAD I slice each 16-bit element out of the flat bus with a part-select. The <code>[i*DW +: DW]</code> syntax means "pick DW bits starting at bit i*DW", which is exactly how you unpack a packed vector:</p>
-									<pre class="mono-block"><code>for (int i = 0; i &lt; D; i++) begin
-    a_reg[i] &lt;= a_flat[i*DW +: DW];   // DW bits starting at i*DW
-    b_reg[i] &lt;= b_flat[i*DW +: DW];
-end</code></pre>
-									<p>Then on each MAC cycle I add one product into a wide accumulator. This is the part you cannot get sloppy with: a Q8.8 times a Q8.8 is a Q16.16 product, so I keep the raw Q16.16 in a 40-bit accumulator for headroom rather than truncating mid-sum.</p>
-									<pre class="mono-block"><code>end else if (curr_state == MAC) begin
-    acc &lt;= acc + (a_reg[idx_counter] * b_reg[idx_counter]); // Q16.16 into wide acc
-    idx_counter &lt;= idx_counter + 1;
-end</code></pre>
-									<p>Only at the very end do I shift back down to Q8.8 and saturate, exactly once. The shift is an arithmetic <code>&gt;&gt;&gt;</code>, not a logical <code>&gt;&gt;</code>, so the sign bit survives on negative results, and the clamp keeps an overflow from wrapping silently:</p>
-									<pre class="mono-block"><code>assign shifted = acc &gt;&gt;&gt; FRAC;         // Q16.16 -&gt; Q8.8, keep the sign bit
-
-always_comb begin
-    if      (shifted &gt; sMAX) s = sMAX;  // clamp high
-    else if (shifted &lt; sMIN) s = sMIN;  // clamp low
-    else    s = shifted[DW-1:0];        // in range
-end</code></pre>
-
-									<h3>Step 4: drive the handshake from the state</h3>
-									<p>The handshake outputs are just decodes of the FSM state, which keeps them glitch-free and easy to reason about: ready to accept only in IDLE, result valid only in DONE.</p>
+									<h3>The interface is the point</h3>
+									<p>Every module carries a valid/ready handshake, decoded straight from the FSM state: accept only in IDLE, result valid only in DONE. This is not incidental. Valid/ready <i>is</i> AXI4-Stream, so these blocks compose into a streaming datapath later without rework.</p>
 									<pre class="mono-block"><code>assign in_ready  = (curr_state == IDLE);
 assign out_valid = (curr_state == DONE);</code></pre>
+									<p>The testbench drives known vectors through the full handshake and checks basic, signed, and saturating cases: <code>[1,2,3,4]&middot;[1,1,1,1]=10 -&gt; 2560</code>, a signed dot to 1024, and an overflow that clamps to 32767. All three pass. The QK&#8868; engine on top reuses this one <code>dot4</code>, sequences it over all N&times;N token pairs, and applies <code>1/&#8730;d</code> as a right shift (the dims are powers of two). That controller is what I am wiring now.</p>
 
-									<h3>Step 5: prove it in simulation</h3>
-									<p>The testbench drives known vectors through the full handshake (present a, b and in_valid, wait for the accept beat, drop in_valid, wait for out_valid, sample s) and checks three cases. All three pass:</p>
-									<pre class="mono-block"><code>T1 [1,2,3,4].[1,1,1,1] = 10.0  -&gt; 2560   PASS   // basic
-T2 [-1,-2,3,4].[1,1,1,1] = 4.0 -&gt; 1024   PASS   // signed
-T3 [100..].[100..] = 40000     -&gt; 32767  PASS   // saturates</code></pre>
+									<div class="callout take"><span class="k">Takeaway</span><p>Time-multiplexing one multiplier costs cycles to save area: QK&#8868; becomes roughly N&sup2;&middot;(D + overhead) cycles. That is the right default for a first correct core; the parallel-multiplier version is a later throughput optimization, not a correctness one.</p></div>
 
-									<h3>What is next: the QK&#8868; engine</h3>
-									<p>The engine above <code>dot4</code> reuses that single instance and sequences it over all N&times;N token pairs with a controller FSM that drives dot4's own valid/ready lines: ISSUE presents <code>q_mem[i]</code> and <code>k_mem[j]</code>, WAIT holds until dot4 raises out_valid, then it captures the score and advances i, j. The <code>1/&#8730;d</code> scale is a plain right shift here, because my dimensions are powers of two. That controller is what I am wiring up now.</p>
-									<pre class="mono-block"><code>// S[i][j] = (Q_row_i . K_row_j) / sqrt(d)   for all i, j
-// reuse ONE dot4, sequenced over N*N pairs by a controller FSM:
-//   IDLE -&gt; ISSUE (drive dot4 in_valid) -&gt; WAIT (dot4 out_valid) -&gt; ISSUE/DONE
-// scale by 1/sqrt(d) = right shift SQRTD_SH   (dims are powers of 2)</code></pre>
+									<h3>Performance (to measure)</h3>
+									<p>Expectation: a small, high-fmax core whose latency is dominated by the serial MAC. Throughput is set by cycles-per-score times the clock period; unrolling multipliers later trades area for fewer cycles.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>Cycles per score / full QK&#8868;</td><td>XSim cycle count from the waveform</td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Latency (ns)</td><td>cycles &times; clock period</td><td><span class="tbd">[to measure]</span></td></tr>
+												<tr><td>fmax (MHz)</td><td>Vivado timing report (worst-case slack)</td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Throughput (scores/s)</td><td>fmax / cycles-per-score</td><td><span class="tbd">(pending)</span></td></tr>
+												<tr><td>Area (LUT / FF / DSP)</td><td>Vivado utilization report</td><td><span class="tbd">TBD</span></td></tr>
+											</tbody>
+										</table>
+									</div>
 								</article>
 
 								<hr class="entry-sep" />
@@ -141,47 +120,39 @@ T3 [100..].[100..] = 40000     -&gt; 32767  PASS   // saturates</code></pre>
 								<!-- ENTRY: M4 -->
 								<article>
 									<span class="entry-date">2026-08-01</span><span class="tag done">M4 &middot; done</span>
-									<h2>CUDA tiled kernel: load once, reuse many</h2>
-									<p>M4 is the same float32 attention math as the naive kernel. The only thing that changes is <i>where the data lives while I compute</i>. Instead of every thread re-reading Q, K and V straight from global memory, the block stages them into on-chip shared memory once, syncs, and then everyone reuses that copy.</p>
+									<h2>Tiling is an arithmetic-intensity play</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>Attention at scale is memory-bound: it moves far more bytes than it does FLOPs. The tiled kernel does not change a single arithmetic operation. It changes <i>where the data lives</i> during compute, which raises arithmetic intensity (FLOPs per byte read from global memory) and slides the kernel toward the compute roof.</p></div>
 
-									<h3>Why this matters: count the reads</h3>
-									<p>I wanted to actually quantify the win at N = d = d_v = 4 with no caching. In the naive kernel every one of the N threads reads all of Q, K and V, so each of those three tensors gets read N&times;N&times;D = 64 times, for 192 reads total. But there are only 3&times;16 = 48 distinct input elements. That is a 4&times; redundancy, which is exactly N. Tiling drives those N&sup2; terms back toward N: load the 48 elements to shared once, reuse on-chip. This is why the memory hierarchy matters, roughly registers at ~1 cycle, shared at ~20-30, global at ~400-600.</p>
+									<h3>Count the bytes, not the FLOPs</h3>
+									<p>At N = d = d_v = 4 with no caching, the naive kernel has each of N threads read all of Q, K and V. Each tensor is read N&middot;N&middot;D = 64 times, so 192 global reads, against only 3&middot;16 = 48 distinct elements. That is 4&times; redundancy, which is exactly N: every key and value row is re-fetched once per query. The FLOP count is unchanged, so intensity is 4&times; lower than it needs to be, and global memory (~400 to 600 cycles) is the wall.</p>
 									<pre class="mono-block"><code>naive:  Q,K,V each read N*N*D = 64  -&gt; 192 reads + 16 writes
 distinct input elements          = 3 * 16 = 48
 redundancy = 192 / 48            = 4x  (= N)</code></pre>
+									<p>Tiling loads those 48 elements into on-chip shared memory (~20 to 30 cycles) once, then every thread reuses them. As N grows, the naive N&sup2; traffic terms collapse toward N, and the win grows with the problem.</p>
 
-									<h3>Step 1: declare the shared tiles and load them cooperatively</h3>
-									<p>A <code>__shared__</code> array is one copy per block, visible to every thread in it, alive only while the block runs. The cooperative load has thread i copy row i of each tensor, which is also nicely coalesced because a row is contiguous:</p>
-									<pre class="mono-block"><code>__shared__ float sQ[N*D];       // one copy per block, all threads see it
-__shared__ float sK[N*D];
-__shared__ float sV[N*DV];
-
-int i = blockIdx.x * blockDim.x + threadIdx.x;
-if (i &lt; N) {                     // COOPERATIVE LOAD: thread i loads row i
+									<h3>The one new hazard</h3>
+									<p>Cooperative load has thread i copy row i into the shared tiles; then a block-wide <code>__syncthreads()</code> barrier; then the guarded compute. Every thread must reach every barrier, so you never <code>return</code> before one.</p>
+									<pre class="mono-block"><code>if (i &lt; N) {                     // cooperative load: thread i loads row i
     for (int k = 0; k &lt; D;  k++) sQ[i*D + k]  = Q[i*D + k];
-    for (int k = 0; k &lt; D;  k++) sK[i*D + k]  = K[i*D + k];
-    for (int c = 0; c &lt; DV; c++) sV[i*DV + c] = V[i*DV + c];
-}</code></pre>
+    /* sK, sV likewise */
+}
+__syncthreads();                // ALL threads reach this - never return before it
+if (i &lt; N) { /* compute from sQ/sK/sV, then write O */ }</code></pre>
+									<div class="callout take"><span class="k">Takeaway</span><p>Guard the work, not the barrier. Result: <b>max abs err 1.192093e-07, bit-identical to the naive kernel.</b> Same math, different data path, which is exactly the point: tiling is a memory optimization, so correctness must not move.</p></div>
 
-									<h3>Step 2: the barrier, and where to put it</h3>
-									<p>This is the new hazard. <code>__syncthreads()</code> is a block-wide barrier, and <b>every thread has to reach every barrier</b>. If you put one after an early <code>return</code>, the threads that returned never arrive and the block deadlocks (technically undefined behavior, which is worse: it might hang, might return garbage, might look fine until it doesn't). The rule I keep repeating to myself is <b>guard the work, not the barrier</b>: the load is guarded, the sync is not, then the compute is guarded again.</p>
-									<pre class="mono-block"><code>__syncthreads();                // ALL threads reach this - never return before it
-
-if (i &lt; N) {                     // guard the WORK, not the barrier
-    // same math as M3, but reading from sQ / sK / sV instead of global
-    // dot -&gt; row-max -&gt; exp/sum -&gt; normalize -&gt; PV
-    O[i*DV + c] = val;
-}</code></pre>
-									<p>One design note: I deliberately do <i>not</i> stage O in shared. It is written exactly once per element by its owner thread with zero reuse, so it goes straight to global. Shared memory is for reused inputs, not write-once outputs.</p>
-
-									<h3>The bugs I hit (all caught before the GPU)</h3>
-									<ul>
-										<li>Indexed the shared V tile as <code>sV[c*DV+j]</code> when it should be <code>sV[j*DV+c]</code>. A transpose that silently corrupts the answer. The real one.</li>
-										<li>Scores loop written <code>j &lt; D</code> instead of <code>j &lt; N</code>. Latent, masked by N==D, wrong intent.</li>
-										<li>Wrote the launch with <code>&lt;&lt;</code> (a bit-shift) instead of the triple <code>&lt;&lt;&lt;...&gt;&gt;&gt;</code>.</li>
-										<li>Error-check order inverted: copied results back <i>before</i> checking the launch. It has to be launch, getLastError, sync, then copy.</li>
-									</ul>
-									<p>Result: <b>max abs err 1.192093e-07, bit-for-bit identical to the naive kernel.</b> Same math, different data path, exactly what I wanted to see.</p>
+									<h3>Performance (to measure)</h3>
+									<p>Expectation: at N=4 the whole problem fits in registers, so tiling is not faster here; the speedup is a large-N effect and should track the drop in redundant global reads.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Speedup vs M3 naive</td><td>latency ratio at matched N</td><td><span class="tbd">[to measure]</span></td></tr>
+												<tr><td>Achieved memory bandwidth</td><td>bytes moved / kernel time, vs peak (roofline)</td><td><span class="tbd">(pending)</span></td></tr>
+												<tr><td>Arithmetic intensity (FLOP/byte)</td><td>FLOPs / global bytes read</td><td><span class="tbd">TBD</span></td></tr>
+											</tbody>
+										</table>
+									</div>
 								</article>
 
 								<hr class="entry-sep" />
@@ -189,55 +160,48 @@ if (i &lt; N) {                     // guard the WORK, not the barrier
 								<!-- ENTRY: M3 -->
 								<article>
 									<span class="entry-date">2026-07-18</span><span class="tag done">M3 &middot; done</span>
-									<h2>CUDA naive kernel, and why I went back to float</h2>
-									<p>For the GPU I deliberately dropped the fixed-point work and went back to plain float32. The reason is a rule I keep coming back to: never debug two new things at once. On the GPU I want to isolate <i>did I parallelize correctly?</i> from <i>did I quantize correctly?</i>. So this kernel is float, one thread per output row, and the only question it answers is whether my parallel version matches the golden model.</p>
+									<h2>CUDA naive: isolate one variable at a time</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>Moving to the GPU adds two new ways to be wrong: parallelism and precision. Never debug both at once. I kept the math in float32 so the only question this kernel answers is <i>did I parallelize correctly?</i>. Quantization is already validated separately in M2.</p></div>
 
-									<h3>Step 1: a data bridge, byte-for-byte</h3>
-									<p>My dev machine is an M1 Mac with no <code>nvcc</code>, so I write the <code>.cu</code> here and run it on a separate GPU box. C++ <code>rand</code> cannot reproduce NumPy, so I export Q, K, V and the golden O to <code>.npy</code> and load those. I cast to float32 <i>before</i> saving rather than exporting float64 and downcasting in CUDA, so both sides read the identical bytes. Any difference is then the kernel's fault, never a silent truncation. The known cost is a hard error floor, since the golden is float64 cast to float32.</p>
+									<h3>A byte-exact data bridge</h3>
+									<p>My dev machine (M1 Mac) has no <code>nvcc</code>, so I write the <code>.cu</code> here and run it on a GPU box. C++ <code>rand</code> cannot reproduce NumPy, so I export Q, K, V and the golden O as <code>.npy</code> and load those. Casting to float32 <i>before</i> saving means both sides read identical bytes; any diff is the kernel's fault, never a silent truncation. The cost is a fixed error floor, since the golden is float64 cast to float32.</p>
 
-									<h3>Step 2: parse the .npy header, then read the floats</h3>
-									<p>A <code>.npy</code> file is a small magic string, a version, a 2-byte header length, an ASCII dict header, then the raw row-major data. I already know the shape, so I skip the header and read the payload. The bug here taught me the most: the header length is <i>already a byte count</i>, but I first wrote <code>fseek(f, 2*hdr_len, ...)</code> and seeked past the end of the file. Seeking past EOF is silently legal and returns 0; nothing complains until the later <code>fread</code> comes up short. That is why checking <code>fread</code>'s return is load-bearing, not defensive boilerplate:</p>
+									<h3>The bug that taught the most</h3>
+									<p>A <code>.npy</code> file is magic + version + a 2-byte header length + an ASCII header + raw data. The header length is <i>already a byte count</i>, but I first wrote <code>fseek(f, 2*hdr_len, ...)</code> and ran past EOF. Seeking past EOF is silently legal and returns 0; nothing complains until the later <code>fread</code> comes up short. Checking <code>fread</code>'s return is the only witness that it failed.</p>
 									<pre class="mono-block"><code>fseek(f, 8, SEEK_SET);                    // skip magic (6B) + version (2B)
-uint16_t hdr_len;
 fread(&amp;hdr_len, sizeof(uint16_t), 1, f);  // header length, in bytes
 fseek(f, hdr_len, SEEK_CUR);              // NOT 2*hdr_len - already a byte count
 size_t got = fread(data, sizeof(float), rows*cols, f);
 if ((size_t)(rows*cols) != got) { /* fread's return is the only witness */ }</code></pre>
 
-									<h3>Step 3: one thread computes one output row</h3>
-									<p>The kernel maps thread i to output row i, guards the over-provisioned threads, and then walks the attention math straight through: dot products for the scores, subtract the row max for stability, exp and sum, normalize, then the PV blend.</p>
-									<pre class="mono-block"><code>__global__ void attention_kernel(const float* Q, const float* K,
-                                  const float* V, float* O) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i &gt;= N) return;                     // one thread per output row
-    float s[N];
+									<h3>One thread per output row</h3>
+									<p>Thread i owns row i: dot products for the scores, subtract the row max for stability, exp and sum, normalize, then the PV blend. The launch is async and returns void, so config errors need <code>cudaGetLastError()</code> and runtime errors need <code>cudaDeviceSynchronize()</code>, checked <i>before</i> the copy back.</p>
+									<pre class="mono-block"><code>int i = blockIdx.x * blockDim.x + threadIdx.x;
+if (i &gt;= N) return;                        // one thread per output row
+for (int j = 0; j &lt; N; j++) {              // scores: dot(Q[i],K[j]) / sqrt(D)
+    float dot = 0.0f;
+    for (int k = 0; k &lt; D; k++) dot += Q[i*D + k] * K[j*D + k];
+    s[j] = dot / sqrtf((float) D);
+}
+// row-max -&gt; expf -&gt; sum -&gt; normalize -&gt; PV into O[i*DV + c]
 
-    for (int j = 0; j &lt; N; j++) {           // scores: dot(Q[i],K[j]) / sqrt(D)
-        float dot = 0.0f;
-        for (int k = 0; k &lt; D; k++) dot += Q[i*D + k] * K[j*D + k];
-        s[j] = dot / sqrtf((float) D);
-    }
-    float m = s[0];                         // row max (stable softmax)
-    for (int j = 1; j &lt; N; j++) if (s[j] &gt; m) m = s[j];
+attention_kernel&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(dQ, dK, dV, dO);
+CUDA_CHECK(cudaGetLastError());            // launch-config error
+CUDA_CHECK(cudaDeviceSynchronize());       // runtime error + barrier before D2H</code></pre>
+									<div class="callout take"><span class="k">Takeaway</span><p><b>Max abs err 1.192093e-07</b>, exactly float32 machine epsilon (2<sup>-23</sup>), the theoretical floor against an f64-then-f32 golden. When you hit the precision floor, the kernel is correct and there is nothing left to chase.</p></div>
 
-    float denom = 0.0f;                     // exp + sum
-    for (int j = 0; j &lt; N; j++) { s[j] = expf(s[j] - m); denom += s[j]; }
-    for (int j = 0; j &lt; N; j++) s[j] /= denom;        // normalize
-
-    for (int c = 0; c &lt; DV; c++) {          // PV
-        float acc = 0.0f;
-        for (int j = 0; j &lt; N; j++) acc += s[j] * V[j*DV + c];
-        O[i*DV + c] = acc;
-    }
-}</code></pre>
-
-									<h3>Step 4: the host flow, in strict order</h3>
-									<p>Host side is load, allocate on the device, copy in, launch, then check the launch <i>before</i> touching the results. The launch is async and returns void, so you catch config errors with <code>cudaGetLastError()</code> and runtime errors with <code>cudaDeviceSynchronize()</code>, which also acts as the barrier before the copy back:</p>
-									<pre class="mono-block"><code>attention_kernel&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(dQ, dK, dV, dO);
-CUDA_CHECK(cudaGetLastError());       // launch-config error
-CUDA_CHECK(cudaDeviceSynchronize());  // runtime error + barrier before D2H
-CUDA_CHECK(cudaMemcpy(hO, dO, N*DV*sizeof(float), cudaMemcpyDeviceToHost));</code></pre>
-									<p>Result: <b>max abs err 1.192093e-07</b>, which is exactly float32 machine epsilon, 2<sup>-23</sup>, the theoretical floor against an f64-then-f32 golden. You cannot do better, and I hit it.</p>
+									<h3>Performance (to measure)</h3>
+									<p>Expectation: at these dims the kernel is memory-bound and latency-dominated, so raw numbers are mostly a baseline for the tiled version to beat at larger N.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Effective throughput (GFLOP/s)</td><td>attention FLOPs / kernel time</td><td><span class="tbd">[to measure]</span></td></tr>
+												<tr><td>Occupancy</td><td>Nsight Compute (warps active / max)</td><td><span class="tbd">(pending)</span></td></tr>
+											</tbody>
+										</table>
+									</div>
 								</article>
 
 								<hr class="entry-sep" />
@@ -245,48 +209,36 @@ CUDA_CHECK(cudaMemcpy(hO, dO, N*DV*sizeof(float), cudaMemcpyDeviceToHost));</cod
 								<!-- ENTRY: M2 -->
 								<article>
 									<span class="entry-date">2026-06-28</span><span class="tag done">M2 &middot; done</span>
-									<h2>A fixed-point twin, and the softmax that stopped summing to 1</h2>
-									<p>FPGAs do not hand you floating point, so before touching any HDL I rebuilt the whole model on a Q8.8 integer grid in Python and diffed it against the float golden. Same seed, so every difference is genuine quantization error, not input drift.</p>
+									<h2>Fixed-point: price the accuracy before building the hardware</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>An FPGA does integer math, not floating point. The question to answer <i>before</i> writing HDL is: how much accuracy does that cost? Answering it in Python, where a print statement is free, turns a vague worry into a concrete error budget.</p></div>
 
-									<h3>Step 1: the quantize / dequantize / saturate helpers</h3>
-									<p>Q8.8 means a real number times SCALE = 2<sup>8</sup> = 256, rounded to an integer, stored in 16 bits. The one rule that matters most is saturate <i>before</i> storing: <code>quantize</code> clamps internally so a caller can never forget and let a large value wrap around.</p>
-									<pre class="mono-block"><code>FRAC = 8
-SCALE = 2 ** FRAC              # 256
-BITS = 16
-INT_MIN, INT_MAX = -2**(BITS-1), 2**(BITS-1) - 1   # -32768 .. 32767
+									<h3>The grid, and the one rule</h3>
+									<p>Q8.8 means a real number times SCALE = 2<sup>8</sup> = 256, stored as a signed 16-bit integer. The rule the whole file lives on: multiplying two Q8.8 values doubles the fraction bits to Q16.16, so after each integer matmul I divide the accumulator by SCALE&sup2; to get back to a real value. Quantize saturates internally so a large value can never wrap silently.</p>
+									<pre class="mono-block"><code>def quantize(x):
+    return saturate(np.round(x * SCALE).astype(int))   # clamp before storing
 
-def saturate(q):
-    return np.clip(q, INT_MIN, INT_MAX)            # clamp before storing
-
-def quantize(x):
-    return saturate(np.round(x * SCALE).astype(int))
-
-def dequantize(q):
-    return q / SCALE</code></pre>
-
-									<h3>Step 2: do QK&#8868; and PV on the integer grid</h3>
-									<p>Here is the bookkeeping that the whole file lives or dies on: multiplying two Q8.8 numbers doubles the fraction bits to Q16.16, so after each integer matmul I divide the accumulator by SCALE&sup2; to get back to a real value. QK&#8868; needs the transpose to contract the feature dim; PV does not, because its shared keys axis is already aligned.</p>
-									<pre class="mono-block"><code>Qq, Kq = quantize(Q), quantize(K)      # Q8.8 integers
+Qq, Kq = quantize(Q), quantize(K)
 S_raw   = Qq @ Kq.T                    # integer matmul -&gt; Q16.16
-S_fixed = (S_raw / (SCALE * SCALE)) / np.sqrt(d)   # /SCALE^2, then /sqrt(d)
+S_fixed = (S_raw / (SCALE * SCALE)) / np.sqrt(d)   # /SCALE^2, then /sqrt(d)</code></pre>
+									<p>Only QK&#8868; and PV are truly on the grid here. Softmax's <code>exp</code> stays in float, because a fixed-point exp is a lookup table that mirrors a future RTL stage; scoping it out keeps one thing on the grid at a time.</p>
 
-# ... softmax (see below) produces P_fixed ...
-
-Vq, Pq = quantize(V), quantize(P_fixed)
-O_raw   = Pq @ Vq                      # integer matmul -&gt; Q16.16
-O       = O_raw / (SCALE * SCALE)      # dequantize back to real</code></pre>
-
-									<h3>Step 3: keep softmax's exp in float (for now)</h3>
-									<p>Only QK&#8868; and PV are truly on the grid in this milestone. The softmax <code>exp</code> stays in float, because a proper fixed-point exp is a lookup table that mirrors the RTL exp stage, and that is a later pass. Scoping it this way keeps one thing at a time on the grid:</p>
-									<pre class="mono-block"><code>m = np.max(S_fixed, axis=1, keepdims=True)
-e = np.exp(S_fixed - m)                        # exp still float here
-P_fixed = e / np.sum(e, axis=1, keepdims=True)</code></pre>
-
-									<h3>The result, and the bug I surfaced on purpose</h3>
-									<p>Headline: <b>max abs error 0.00631, mean 0.00205</b> versus the golden, about 0.6% worst case. That is the error budget I now hold the CUDA and RTL versions to. Being able to quote a concrete number before writing a line of hardware is the entire point of this level.</p>
-									<p>One bug worth remembering: I first wrote the golden softmax as <code>exp(S - max)</code> and forgot the <code>/ sum</code>, so the rows summed to 1.7 to 2.9 and the output came out about 2&times; too big. I caught it by just printing <code>P.sum(axis=1)</code>. Then the interesting one, surfaced on purpose: quantizing a perfectly normalized softmax row breaks its normalization.</p>
+									<h3>The failure the grid forces</h3>
+									<p>Quantizing a perfectly normalized softmax row breaks its normalization: the tiny probabilities round onto the lattice and the errors do not cancel.</p>
 									<pre class="mono-block"><code>Pq row sums (Q8.8): [256, 257, 255, 256]   // should all be 256 = 1.0</code></pre>
-									<p>Each tiny probability gets rounded onto the lattice and the plus-or-minus-1 errors do not cancel. At N=4 it is only about 1/256; at N=128 you are summing 128 rounding errors and it compounds. The real fix is more fraction bits or an explicit renormalization stage, and now I know I have to budget for that in the RTL. Much cheaper to learn here than on the FPGA.</p>
+									<p>At N=4 that is only about 1/256, but you sum N of these, so at N=128 it compounds. The fix is more fraction bits or an explicit renormalization stage, which is now a known line item for the RTL.</p>
+									<div class="callout take"><span class="k">Takeaway</span><p><b>Max abs error 0.00631 (~0.6%), mean 0.00205.</b> That is the budget the CUDA and RTL versions are held to. Surfacing the normalization break in Python, not on the FPGA, is the entire value of this level.</p></div>
+
+									<h3>Performance (to measure)</h3>
+									<p>Expectation: pure-Python integer emulation, so latency is irrelevant in absolute terms; the point of this level is the error budget above, not speed.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>Latency per forward pass</td><td>Python <code>timeit</code></td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Max / mean abs error vs golden</td><td>diff against M1 (measured)</td><td>0.00631 / 0.00205</td></tr>
+											</tbody>
+										</table>
+									</div>
 								</article>
 
 								<hr class="entry-sep" />
@@ -294,35 +246,37 @@ P_fixed = e / np.sum(e, axis=1, keepdims=True)</code></pre>
 								<!-- ENTRY: M1 -->
 								<article>
 									<span class="entry-date">2026-06-13</span><span class="tag done">M1 &middot; done</span>
-									<h2>Starting from a golden model I can trust</h2>
-									<p>Every good hardware project starts with a reference you believe completely, so milestone one is a float64 implementation of single-head scaled dot-product attention in NumPy, at tiny hand-checkable dimensions (N = d = d_v = 4). I built it chunk by chunk, and each chunk exists for a reason.</p>
+									<h2>Start from an oracle you can trust</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>You cannot measure error without a reference. Before any optimization, build a float64 model that is obviously correct and self-checking, at dimensions small enough to verify by hand. Every lower level is then diffed against it.</p></div>
 
-									<h3>Step 1: seed, dimensions, and the inputs</h3>
-									<p>The fixed seed is the contract that makes every later cross-level diff meaningful: identical Q, K, V on every run and in every downstream version. The dimensions are deliberately tiny so I can check the numbers by hand.</p>
-									<pre class="mono-block"><code>import numpy as np
-np.random.seed(0)                 # fixed inputs = unambiguous oracle
-
+									<h3>Seed, dims, and the three operations</h3>
+									<p>Attention is three steps: scores, softmax, blend. A fixed seed makes the inputs identical on every run and in every downstream version, so a later mismatch is always a real bug, never input drift. Tiny dims (N = d = d_v = 4) keep it hand-checkable.</p>
+									<pre class="mono-block"><code>np.random.seed(0)                 # fixed inputs = unambiguous oracle
 N, d, d_v = 4, 4, 4
-Q = np.random.randn(N, d)         # queries
-K = np.random.randn(N, d)         # keys
-V = np.random.randn(N, d_v)       # values</code></pre>
+Q, K, V = np.random.randn(N, d), np.random.randn(N, d), np.random.randn(N, d_v)
 
-									<h3>Step 2: scores, with the 1/&#8730;d scale</h3>
-									<p>A matmul eats its shared inner dimension. <code>Q @ K.T</code> contracts the feature dim d to give a token-by-token score matrix; <code>Q.T @ K</code> would contract tokens instead and give you something completely different. The <code>1/&#8730;d</code> factor is numerical conditioning so the softmax does not saturate.</p>
-									<pre class="mono-block"><code>S = Q @ K.T / np.sqrt(d)          # (N,d).(d,N) -&gt; (N,N), contracts d</code></pre>
+S = Q @ K.T / np.sqrt(d)          # (N,d).(d,N) -&gt; (N,N), contracts feature dim d</code></pre>
 
-									<h3>Step 3: a numerically stable softmax</h3>
-									<p>Subtracting the row max before <code>exp</code> is mathematically identical to plain softmax but prevents overflow. This is the exact reason a <code>row_max</code> engine will eventually exist in the RTL. And <code>keepdims=True</code> matters: it keeps the reductions as (N,1) so they broadcast down the rows. Drop it and the reduction broadcasts against the wrong axis, silently wrong with no crash.</p>
+									<h3>Two details that bite everywhere later</h3>
+									<p>Subtracting the row max before <code>exp</code> is mathematically identical to plain softmax but prevents overflow; this is exactly why a <code>row_max</code> engine will exist in the RTL. And <code>keepdims=True</code> keeps the reductions as (N,1) so they broadcast down rows; drop it and you get a silently-wrong result with no crash.</p>
 									<pre class="mono-block"><code>max_ = np.max(S, axis=1, keepdims=True)    # (N,1)
-exp_ = np.exp(S - max_)                     # (N,N), stable
-sum_ = np.sum(exp_, axis=1, keepdims=True)  # (N,1)
-P = exp_ / sum_                             # rows now sum to 1</code></pre>
+exp_ = np.exp(S - max_)                     # stable
+P = exp_ / np.sum(exp_, axis=1, keepdims=True)
+O = P @ V                                   # PV needs no transpose
+assert np.allclose(P.sum(axis=1), 1.0)      # first test in the project</code></pre>
+									<div class="callout take"><span class="k">Takeaway</span><p>A self-checking reference with a fixed seed is the cheapest verification you will ever write, and it makes every later level falsifiable. The assert is the whole point: wrong axis or missing normalization dies immediately.</p></div>
 
-									<h3>Step 4: the output, and the first test in the project</h3>
-									<p>PV needs no transpose (its shared keys axis is already aligned), so O is just the weighted blend of the value rows. The <code>assert</code> is the first test in the whole project: if softmax landed on the wrong axis or lost its normalization, the row sums are not 1 and the script dies on the spot.</p>
-									<pre class="mono-block"><code>O = P @ V
-assert np.allclose(P.sum(axis=1), 1.0)     # softmax rows must sum to 1</code></pre>
-									<p>It passed, and by inspection softmax preserves rank (the biggest score in a row becomes the biggest probability) and O leans toward the value row it weights most. The real value of this milestone is the discipline: a self-checking float reference with a fixed seed means every lower level has an unambiguous oracle, so any mismatch downstream is a real bug, never input drift.</p>
+									<h3>Performance (to measure)</h3>
+									<p>Expectation: this is the correctness oracle, not a speed target. The latency number exists only as the top of the ladder the CUDA and RTL versions are compared against.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>Latency per forward pass</td><td>Python <code>timeit</code></td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Self-check (softmax rows sum to 1)</td><td><code>assert np.allclose(...)</code></td><td>PASS</td></tr>
+											</tbody>
+										</table>
+									</div>
 								</article>
 
 							</section>
