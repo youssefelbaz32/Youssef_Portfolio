@@ -76,9 +76,56 @@
 								<!-- Keep hr.entry-sep between entries. No em dashes.               -->
 								<!-- ============================================================= -->
 
+								<!-- ENTRY: M8 GPU -->
+								<article>
+									<span class="entry-date">2026-09-18</span><span class="tag done">M8 &middot; GPU</span>
+									<h2>Testing a CUDA kernel on a laptop with no CUDA</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>I write CUDA on an M1 Mac and run it on a separate machine, which means every bug costs a round trip and I find out about it hours later. So I built a harness that runs the unmodified kernel body on the CPU: one thread per CUDA thread, blocks executed one at a time, and <code>__syncthreads()</code> backed by a real barrier. It catches the entire class of bug I actually make, which is indexing, not occupancy.</p></div>
+
+									<h3>The same recurrence, a third time</h3>
+									<p>The fused kernel is the online softmax from the last post, mapped onto a GPU instead of a register file. One thread block owns one query row, the running max, running sum and accumulator live in registers for the whole kernel, and K and V stream in from global memory in tiles. The score row is never written anywhere, which is the whole point: at a sequence length of 4096 that row alone would be 16 KB per query.</p>
+									<p>What changes between the FPGA and the GPU is not the algorithm, it is who owns the state and how the reduction happens. In RTL a comparator chain finds the block max and one FSM sequences everything. Here, 128 threads have to agree on the block max and the block sum every tile, which is two block-wide reductions per tile that the hardware version simply does not pay. Both reducers broadcast their result back to every thread rather than leaving it in thread zero, because every thread owns accumulators that need the same correction factor.</p>
+									<p>Causal masking was the one place I could do better than the obvious thing. The usual approach computes the full tile and masks the upper triangle. Since query i can only attend to keys up to i, the loop can just stop at i+1 instead, so the work is never done rather than done and discarded. At long sequence lengths that is close to half the FLOPs.</p>
+
+									<h3>What the CPU harness does and does not prove</h3>
+									<p>The emulation boundary is exactly two functions, the block max and the block sum, which use warp shuffles on the GPU and a shared array on the CPU. Everything else is the same source file nvcc compiles. That boundary is deliberate: a harness that rewrites the kernel proves something about the harness, not the kernel.</p>
+									<pre class="mono-block"><code>N=4     D=4    causal=0  max_err=1.484e-07  PASS
+N=4     D=4    causal=1  max_err=1.421e-07  PASS
+N=64    D=32   causal=1  max_err=4.052e-07  PASS
+N=128   D=64   causal=0  max_err=3.958e-07  PASS
+N=300   D=64   causal=0  max_err=2.766e-07  PASS   &lt;- tail tile, 300 % 128 != 0
+N=300   D=64   causal=1  max_err=6.577e-07  PASS   &lt;- tail tile AND causal
+N=512   D=128  causal=0  max_err=3.102e-07  PASS</code></pre>
+									<p>N of 300 is deliberately not a multiple of the tile width. The masked tail tile is where boundary bugs live, and a sweep over clean powers of two never visits it. Running causal and a ragged tail together is the case where two separate pieces of masking logic have to agree, which is the one I trust least.</p>
+									<p>This proves loop bounds, tile arithmetic, the online recurrence and barrier placement. A missing <code>__syncthreads()</code> deadlocks here, loudly, instead of producing plausible garbage on hardware. It proves nothing at all about coalescing, occupancy, real races or speed, and I would rather say that than imply the kernel is finished.</p>
+
+									<h3>A Triton version, and what I will not claim</h3>
+									<p>I wrote the same thing in Triton as well, shaped as a drop-in for <code>F.scaled_dot_product_attention</code> with the same tensor layout so a benchmark cannot accidentally time a transpose. Triton hands back the work CUDA makes you do by hand: loading a two dimensional block is one statement and the compiler picks the layout and the barriers. What it does not hand back is the algorithm. Write the two pass softmax in Triton and it is just as memory bound as the naive kernel was.</p>
+									<p>When I benchmark this, the comparison is against SDPA, which dispatches to the real FlashAttention-2 and cuDNN kernels. I am not going to claim to beat those. This kernel uses no tensor cores at all, so the honest number to report is percent of SDPA, and I will report whatever it turns out to be.</p>
+
+									<div class="callout take"><span class="k">Takeaway</span><p>If your build target is on another machine, the distance between writing a bug and seeing it is the thing worth engineering away. Emulating just enough of the execution model to run the real kernel body cost an afternoon and now catches indexing and tail-tile bugs in seconds, locally, in CI, before the GPU ever sees the code.</p></div>
+
+									<h3>Performance</h3>
+									<p>Correctness is verified. Timings need the GPU box, which is the next thing I am doing.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>Correctness, N up to 512</td><td>CPU emulation vs a float64 reference</td><td>7/7 cases, max 6.6e-07</td></tr>
+												<tr><td>Score row storage per query</td><td>declared state in the kernel</td><td>0 (never materialized)</td></tr>
+												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td><span class="tbd">pending GPU</span></td></tr>
+												<tr><td>Percent of PyTorch SDPA</td><td><code>do_bench</code> median, fp16, matched shapes</td><td><span class="tbd">pending GPU</span></td></tr>
+												<tr><td>Occupancy, DRAM throughput</td><td>Nsight Compute</td><td><span class="tbd">pending GPU</span></td></tr>
+											</tbody>
+										</table>
+									</div>
+								</article>
+
+								<hr class="entry-sep" />
+
 								<!-- ENTRY: M8 -->
 								<article>
-									<span class="entry-date">2026-09-19</span><span class="tag done">M8 &middot; done</span>
+									<span class="entry-date">2026-09-14</span><span class="tag done">M8 &middot; RTL</span>
 									<h2>Softmax was the bottleneck, so I made it stream</h2>
 									<div class="callout idea"><span class="k">Key idea</span><p>I parameterized the MAC count in my attention datapath and swept it, expecting the usual area-for-speed trade. Four times the multipliers bought 1.28x. The profile said everything: the serial divider inside softmax costs the same 449 cycles no matter how wide the matmuls get, so adding MAC lanes only grows its share of the runtime. The fix was not more hardware, it was a different algorithm.</p></div>
 
@@ -129,7 +176,7 @@ O_c   = acc_c / l_run                         // once, at the very end</code></p
 
 								<!-- ENTRY: M5 complete -->
 								<article>
-									<span class="entry-date">2026-09-18</span><span class="tag done">M5 &middot; done</span>
+									<span class="entry-date">2026-09-06</span><span class="tag done">M5 &middot; done</span>
 									<h2>Bit-exact, or it does not count</h2>
 									<div class="callout idea"><span class="k">Key idea</span><p>My fixed-point Python model was a good precision study and a useless specification. It quantizes the inputs and both matmuls, then calls <code>np.exp</code> and divides in float64. No RTL can ever match that, so comparing hardware against it forces a tolerance, and a tolerance hides exactly the bugs you wrote the testbench to catch.</p></div>
 
