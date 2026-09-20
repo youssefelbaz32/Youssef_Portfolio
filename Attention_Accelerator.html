@@ -93,11 +93,17 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 											<tr><td>M2</td><td>Python Q8.8 fixed-point twin</td><td>max abs err <b>0.00631</b> vs golden (~0.6%)</td><td>Done</td></tr>
 											<tr><td>M3</td><td>CUDA naive kernel (float32)</td><td>max abs err <b>1.192093e-07</b> = the float32 floor (2<sup>-23</sup>)</td><td>Done</td></tr>
 											<tr><td>M4</td><td>CUDA tiled kernel (shared memory)</td><td>max abs err <b>1.192093e-07</b>, bit-identical to M3</td><td>Done</td></tr>
-											<tr><td>M5</td><td>SystemVerilog RTL core (Q8.8)</td><td>dot4 MAC verified (basic / signed / saturate); QK&#8868; engine next</td><td>In progress</td></tr>
-											<tr><td>M8</td><td>FlashAttention-lite (online softmax)</td><td>fuse the passes, never store the full S matrix</td><td>Planned</td></tr>
+											<tr><td>M5</td><td>SystemVerilog RTL core (Q8.8)</td><td>full datapath, <b>52/52 values exact</b> vs the integer spec at all four stages</td><td>Done</td></tr>
+											<tr><td>M6</td><td>Host to FPGA comms (UART, packet FSM, AXIS)</td><td>byte bridge and backpressure, host driven from Python</td><td>Needs board</td></tr>
+											<tr><td>M7</td><td>FPGA bring-up on Vivado</td><td>synthesis, timing closure, on-hardware diff vs the fixed-point model</td><td>Needs board</td></tr>
+											<tr><td>M8</td><td>FlashAttention-lite, RTL (online softmax)</td><td><b>360 cy on one multiplier</b>, beating the naive core on four (515 cy); N&#178; buffers gone</td><td>Done</td></tr>
+											<tr><td>M8</td><td>FlashAttention-lite, CUDA and Triton</td><td>fused kernel verified on CPU at N=512 including causal and ragged tiles</td><td>Code done, timings pending GPU</td></tr>
 										</tbody>
 									</table>
 								</div>
+
+								<div class="image main"><img src="images/stage_profile.svg" alt="Stacked bar chart of RTL cycles per stage at one, two and four MAC lanes: the matmul segments shrink while the softmax segment stays fixed at 449 cycles" /></div>
+								<p>The result that taught me the most is the one in that chart. I parameterized the MAC count in the RTL and swept it, expecting the usual area-for-speed trade. Four times the multipliers bought <b>1.28x</b>. The matmuls really did get 3.4x faster, but the serial divider inside softmax costs the same 449 cycles regardless, so adding lanes only grew its share of the runtime, from 68% to 87%. The fix was not more hardware. Rewriting softmax to stream (M8) got <b>1.83x at identical area</b> and removed the N&#178; score buffers entirely, which at N=128 and head dim 64 is the difference between needing roughly 64 KB of BRAM and needing 66 words. I wrote that up in <a href="Blog.html">the dev blog</a>.</p>
 
 								<p>The two CUDA numbers are the ones I am most proud of. <b>1.192093e-07 is about one float32 epsilon near unity</b> (2<sup>-23</sup> is the ULP spacing near 1.0). Because I compute the golden model in float64 and cast the exported inputs to float32, a difference this small means close numerical agreement for this test case, not a bug in the kernel. Getting there twice, once naive and once tiled, is strong evidence the kernels are correct, not just close.</p>
 

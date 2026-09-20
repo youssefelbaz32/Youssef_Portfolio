@@ -76,9 +76,107 @@
 								<!-- Keep hr.entry-sep between entries. No em dashes.               -->
 								<!-- ============================================================= -->
 
+								<!-- ENTRY: M8 -->
+								<article>
+									<span class="entry-date">2026-09-19</span><span class="tag done">M8 &middot; done</span>
+									<h2>Softmax was the bottleneck, so I made it stream</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>I parameterized the MAC count in my attention datapath and swept it, expecting the usual area-for-speed trade. Four times the multipliers bought 1.28x. The profile said everything: the serial divider inside softmax costs the same 449 cycles no matter how wide the matmuls get, so adding MAC lanes only grows its share of the runtime. The fix was not more hardware, it was a different algorithm.</p></div>
+
+									<h3>The measurement that changed the plan</h3>
+									<p>The naive design is four stages chained by valid/ready: QK&#8868;, row max, softmax, then P&#183;V. Only the two matmul stages care about <code>LANES</code>, the parameter that says how many <code>dot4</code> units run in parallel. I instrumented the testbench to count cycles per stage by probing each module's FSM state, which costs nothing in the design itself, and swept the parameter.</p>
+									<div class="image fit"><img src="images/stage_profile.svg" alt="Stacked bar chart of cycles per stage at one, two and four MAC lanes. The matmul segments shrink from 97 to 25 cycles while the softmax segment stays fixed at 449 cycles, growing from 68 percent to 87 percent of the total." /></div>
+									<p>The matmuls did get 3.4x faster. The pipeline went from 659 cycles to 515. Everything I gained on the matmul side was swallowed by a stage I had not touched, and the more I optimized, the worse the imbalance got: softmax was 68% of the runtime at one lane and 87% at four. This is Amdahl's law, except I could point at the exact register that caused it. The softmax stage runs one restoring divider per probability, N&sup2; divides for an N by N score matrix, one quotient bit per cycle.</p>
+
+									<h3>What online softmax actually does</h3>
+									<p>Softmax looks like it has to be global. You cannot normalize until you have seen every score in the row, and you cannot exponentiate safely until you know the row max. That is why the naive design materializes the whole N by N score matrix and then the whole probability matrix before P&#183;V can start.</p>
+									<p>Online softmax gets around this by carrying a running max and fixing up its own history. Stream the keys in blocks, and for each block:</p>
+									<pre class="mono-block"><code>m_new = max(m_run, max_j s_j)
+corr  = exp(m_run - m_new)                    // &lt;= 1.0, the rebase factor
+l_run = l_run * corr + &#931;_j exp(s_j - m_new)
+acc_c = acc_c * corr + &#931;_j exp(s_j - m_new) * V[j][c]
+
+O_c   = acc_c / l_run                         // once, at the very end</code></pre>
+									<p>The line that matters is <code>corr</code>. When a later block turns out to contain a bigger score, everything already accumulated under the old max is wrong by exactly <code>exp(m_old - m_new)</code>. That is a single constant, not a per-element correction, so one multiply rebases the entire history no matter how much of it there is. That is the whole reason softmax can stream.</p>
+									<div class="image fit"><img src="images/online_softmax.svg" alt="Block diagram of the online softmax datapath. Key blocks stream through parallel dot4 units into a max tree and a shared exp ROM, whose output rebases a running max, running sum and accumulator, before a single reciprocal divide per row produces the output." /></div>
+									<p>Two things fall out of this for free. The N by N buffers disappear, because the only state that survives between blocks is a running max, a running sum, and <code>DV</code> accumulators. And the divides collapse from one per probability to one reciprocal per row, which I then multiply through. At N of 4 that is four divides instead of sixteen. At N of 128 it is 128 instead of 16384.</p>
+									<p>The storage argument is the one that decides whether a design fits on a part. At N of 128 with a head dim of 64, the naive path wants roughly 64 KB of BRAM just to hold S and P. The streaming path needs 66 words, and that number does not grow with sequence length at all.</p>
+
+									<h3>The part I got wrong</h3>
+									<p>My first run showed the streaming version was also twice as accurate as the naive one, 0.0065 max error against 0.0133. I was about to write that down as a free win. It is not true. Running both across 200 random seeds instead of the one I had been using, the gap mostly vanishes: mean error 0.00369 against 0.00407 with a block size of 4, and a dead heat at a block size of 1.</p>
+									<p>Worse, the direction is interesting. Smaller blocks are <em>less</em> accurate, not more. The rebase multiply rounds, and it happens once per block, so its error compounds N/BLK times down a row. It is the only place in the design where an error feeds back into itself. Streaming harder means streaming slightly less accurately, and flash is a memory and divide win rather than an accuracy win.</p>
+									<p>This was the second time in this project that a decision came out backwards when I judged it on one seed. The first was a rounding mode. Sixteen output values is not a distribution, and toy dimensions make that trap much easier to fall into.</p>
+
+									<div class="callout take"><span class="k">Takeaway</span><p>Profile before you parallelize. Four times the multipliers bought 1.28x because I was widening a stage that was already only a third of the problem. Changing the algorithm bought 1.83x at exactly the same area, and deleted the buffers that would have stopped the design fitting at real sequence lengths. The streaming version running on one multiplier beats the naive version running on four.</p></div>
+
+									<h3>Performance</h3>
+									<p>Cycle counts are from Icarus, at N = D = DV = 4 and Q8.8. Area and fmax need Vivado, which is the next thing I am doing.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>End to end latency, 1 MAC</td><td>testbench cycle count, BLK=1</td><td>360 cy (naive: 659)</td></tr>
+												<tr><td>End to end latency, 4 MACs</td><td>testbench cycle count, BLK=4</td><td>240 cy (naive: 515)</td></tr>
+												<tr><td>Divides per N by N output</td><td>counted from the FSM</td><td>N, down from N&sup2;</td></tr>
+												<tr><td>Intermediate storage</td><td>declared state in the RTL</td><td>DV+2 words, was 2N&sup2;</td></tr>
+												<tr><td>Output error vs float64</td><td>200 seed sweep, mean abs</td><td>0.00369 (naive: 0.00407)</td></tr>
+												<tr><td>fmax (MHz), area (LUT/FF/DSP)</td><td>Vivado timing and utilization</td><td><span class="tbd">pending hardware</span></td></tr>
+											</tbody>
+										</table>
+									</div>
+								</article>
+
+								<hr class="entry-sep" />
+
+								<!-- ENTRY: M5 complete -->
+								<article>
+									<span class="entry-date">2026-09-18</span><span class="tag done">M5 &middot; done</span>
+									<h2>Bit-exact, or it does not count</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>My fixed-point Python model was a good precision study and a useless specification. It quantizes the inputs and both matmuls, then calls <code>np.exp</code> and divides in float64. No RTL can ever match that, so comparing hardware against it forces a tolerance, and a tolerance hides exactly the bugs you wrote the testbench to catch.</p></div>
+
+									<h3>Two Python models, not one</h3>
+									<p>So I wrote a second model whose only job is to be executable as a spec. Every operation in it is an integer operation the RTL performs, in the same order, with the same truncation and the same saturation. It emits its intermediates as hex, the testbenches read them back with <code>$readmemh</code>, and the comparison is exact. Not close. Exact, at all four stage boundaries, or the test fails.</p>
+									<p>It also generates the exp lookup table that the RTL loads, so there is exactly one definition of <code>exp()</code> in the project and the software and hardware cannot drift apart by construction. Checking every stage rather than only the output matters more than I expected: when something breaks, the first stage that mismatches is the buggy one and everything after it is just carrying the error. One red light becomes a bisection.</p>
+									<p>Moving softmax into hardware is not free, and now I can price it. A 256-entry exp ROM plus an integer divider roughly doubles the error against the float64 reference, from 0.0063 to 0.0133 max absolute. That is the honest cost of not having <code>expf</code>.</p>
+
+									<h3>The bugs that actually cost me time</h3>
+									<p><b>The divider was exactly 2x too large.</b> Every probability and every output was double what it should have been, while the two stages before it were perfect. A clean power of two is a strong fingerprint: it is almost always a shift count, and the divider was the only shifter downstream. The FSM leaves <code>DIV_ITER</code> when the counter hits zero, but <code>curr_state</code> is still <code>DIV_ITER</code> on that cycle, so the datapath ran one extra shift-subtract and shifted the quotient left once too many. Loading <code>NUMW - 1</code> instead of <code>NUMW</code> fixed it. That fingerprint took 400 lines of RTL down to one register load.</p>
+									<p><b>An assignment that was not an assignment.</b> I wrote this and it does nothing:</p>
+									<pre class="mono-block"><code>logic d4_all_in_ready = &amp;d4_in_ready;   // WRONG: runs once, at time zero
+assign d4_all_in_ready = &amp;d4_in_ready;  // right</code></pre>
+									<p>At module scope that first line is a variable initializer, not a continuous assignment. It samples once and then never updates for the rest of the simulation.</p>
+									<p><b>A counter that wraps exactly when you need it not to.</b> I first wrote the end of row test as <code>j_base + LANES == N</code>. With N of 4, <code>j_base</code> is two bits wide, so that sum wraps to zero at precisely the moment it should read four. The comparison never fires and the engine sits in its wait state forever. Comparing against the constant <code>N - LANES</code> sidesteps the wrap entirely, and it also reads more like the intent.</p>
+									<p><b>Indexing the wrong dimension.</b> I declared <code>j_base</code> as <code>[$clog2(D)-1:0]</code>, but j indexes keys, which is N, not features. At N = D = 4 it works by accident. I made the same mistake in the CUDA tiled kernel a month earlier, where a loop said <code>j &lt; D</code> instead of <code>j &lt; N</code>. Toy dimensions are great for hand-checking and terrible for catching this entire class of error.</p>
+									<p><b>Signed times unsigned poisons the whole expression.</b> In the streaming datapath the correction factor and the exponentials are naturally unsigned, and the accumulator is signed. SystemVerilog makes an entire expression unsigned if any operand is, so a negative accumulator silently becomes a very large positive one. Both have to be widened into explicit signed values first.</p>
+									<p><b>Capturing one cycle after the handshake.</b> My MAC unit latched its inputs the cycle after <code>valid &amp;&amp; ready</code>. A polite testbench that holds data steady never notices, but a conforming producer is allowed to drop the data the instant the transfer completes. I rewrote the testbench to be as hostile as the protocol permits, scrambling the bus immediately after the transfer edge, and it failed on the first run.</p>
+
+									<h3>One knob worth having</h3>
+									<p>I also stopped hard coding the toy dimensions. Word width, fraction bits, N, D, DV, the reciprocal precision and the lookup table geometry are all synthesis-time parameters now, and CI sweeps the MAC count. That sweep is what produced the profile in the next post, so the parameterization paid for itself immediately rather than being tidiness for its own sake.</p>
+									<p>One measured decision came out of it. Floor division biases all N softmax terms the same way, which shows up as probability rows that always sum to 255 or 256 and never above. Rounding to nearest costs one adder and cuts mean error 21% across a 200 seed sweep. Adding the same rounding to the QK&#8868; stage bought 0.3%, because those scores feed a lookup table indexed by a right shift of three, so a one LSB wobble is discarded seven times out of eight. So I round where it pays and truncate in the MAC, which is also the module that gets replicated per lane.</p>
+
+									<div class="callout take"><span class="k">Takeaway</span><p>A golden model you cannot match bit for bit is a golden model that forces you to accept tolerances, and tolerances hide the bugs worth finding. Writing a second Python model whose only purpose is to be an executable spec felt like duplicated work right up until it caught a divider producing exactly double, at the exact stage boundary where it went wrong.</p></div>
+
+									<h3>Performance</h3>
+									<p>Cycle counts from Icarus at N = D = DV = 4. Timing and area still need Vivado.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>Cycles per score</td><td>testbench counter, 1 MAC lane</td><td>6</td></tr>
+												<tr><td>Full QK&#8868; (16 scores)</td><td>testbench counter, 1 / 2 / 4 lanes</td><td>102 / 54 / 30 cy</td></tr>
+												<tr><td>Full attention, end to end</td><td>testbench counter, 1 / 2 / 4 lanes</td><td>659 / 563 / 515 cy</td></tr>
+												<tr><td>Stage correctness</td><td>exact compare vs the integer spec</td><td>52/52 values, all 4 stages</td></tr>
+												<tr><td>Max abs error vs float64</td><td>LUT exp plus integer divide</td><td>0.0133 (was 0.0063 in float)</td></tr>
+												<tr><td>fmax (MHz), area (LUT/FF/DSP)</td><td>Vivado timing and utilization</td><td><span class="tbd">pending hardware</span></td></tr>
+											</tbody>
+										</table>
+									</div>
+								</article>
+
+								<hr class="entry-sep" />
+
 								<!-- ENTRY: M5 -->
 								<article>
-									<span class="entry-date">2026-08-02</span><span class="tag wip">M5 &middot; in progress</span>
+									<span class="entry-date">2026-08-02</span><span class="tag done">M5 &middot; part 1</span>
 									<h2>RTL: what "cost" means once you are on the chip</h2>
 									<div class="callout idea"><span class="k">Key idea</span><p>In Python and CUDA, cost is time. In RTL, cost splits into three knobs you trade against each other: <b>area</b> (how many multipliers), <b>cycles</b> (how many clocks per result), and <b>fmax</b> (how fast the clock can run). A dot product can be one multiplier reused over D cycles, or D multipliers in parallel. I chose the small-area version first.</p></div>
 
@@ -106,11 +204,11 @@ assign out_valid = (curr_state == DONE);</code></pre>
 										<table class="perf-table">
 											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
 											<tbody>
-												<tr><td>Cycles per score / full QK&#8868;</td><td>XSim cycle count from the waveform</td><td><span class="tbd">TBD</span></td></tr>
-												<tr><td>Latency (ns)</td><td>cycles &times; clock period</td><td><span class="tbd">[to measure]</span></td></tr>
-												<tr><td>fmax (MHz)</td><td>Vivado timing report (worst-case slack)</td><td><span class="tbd">TBD</span></td></tr>
-												<tr><td>Throughput (scores/s)</td><td>fmax / cycles-per-score</td><td><span class="tbd">(pending)</span></td></tr>
-												<tr><td>Area (LUT / FF / DSP)</td><td>Vivado utilization report</td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Cycles per score / full QK&#8868;</td><td>testbench cycle count, 1 MAC lane</td><td>6 cy / 102 cy</td></tr>
+												<tr><td>Latency (ns)</td><td>cycles &times; clock period</td><td><span class="tbd">pending fmax</span></td></tr>
+												<tr><td>fmax (MHz)</td><td>Vivado timing report (worst-case slack)</td><td><span class="tbd">pending hardware</span></td></tr>
+												<tr><td>Throughput (scores/s)</td><td>fmax / cycles-per-score</td><td><span class="tbd">pending fmax</span></td></tr>
+												<tr><td>Area (LUT / FF / DSP)</td><td>Vivado utilization report</td><td><span class="tbd">pending hardware</span></td></tr>
 											</tbody>
 										</table>
 									</div>
@@ -147,10 +245,10 @@ if (i &lt; N) { /* compute from sQ/sK/sV, then write O */ }</code></pre>
 										<table class="perf-table">
 											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
 											<tbody>
-												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td><span class="tbd">TBD</span></td></tr>
-												<tr><td>Speedup vs M3 naive</td><td>latency ratio at matched N</td><td><span class="tbd">[to measure]</span></td></tr>
-												<tr><td>Achieved memory bandwidth</td><td>bytes moved / kernel time, vs peak (roofline)</td><td><span class="tbd">(pending)</span></td></tr>
-												<tr><td>Arithmetic intensity (FLOP/byte)</td><td>FLOPs / global bytes read</td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td><span class="tbd">pending GPU</span></td></tr>
+												<tr><td>Speedup vs M3 naive</td><td>latency ratio at matched N</td><td><span class="tbd">pending GPU</span></td></tr>
+												<tr><td>Achieved memory bandwidth</td><td>bytes moved / kernel time, vs peak (roofline)</td><td><span class="tbd">pending GPU</span></td></tr>
+												<tr><td>Arithmetic intensity (FLOP/byte)</td><td>FLOPs / global bytes read</td><td><span class="tbd">pending GPU</span></td></tr>
 											</tbody>
 										</table>
 									</div>
@@ -197,9 +295,9 @@ CUDA_CHECK(cudaDeviceSynchronize());       // runtime error + barrier before D2H
 										<table class="perf-table">
 											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
 											<tbody>
-												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td><span class="tbd">TBD</span></td></tr>
-												<tr><td>Effective throughput (GFLOP/s)</td><td>attention FLOPs / kernel time</td><td><span class="tbd">[to measure]</span></td></tr>
-												<tr><td>Occupancy</td><td>Nsight Compute (warps active / max)</td><td><span class="tbd">(pending)</span></td></tr>
+												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td><span class="tbd">pending GPU</span></td></tr>
+												<tr><td>Effective throughput (GFLOP/s)</td><td>attention FLOPs / kernel time</td><td><span class="tbd">pending GPU</span></td></tr>
+												<tr><td>Occupancy</td><td>Nsight Compute (warps active / max)</td><td><span class="tbd">pending GPU</span></td></tr>
 											</tbody>
 										</table>
 									</div>
@@ -235,7 +333,7 @@ S_fixed = (S_raw / (SCALE * SCALE)) / np.sqrt(d)   # /SCALE^2, then /sqrt(d)</co
 										<table class="perf-table">
 											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
 											<tbody>
-												<tr><td>Latency per forward pass</td><td>Python <code>timeit</code></td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Latency per forward pass</td><td>Python <code>timeit</code>, 20k runs, N=4</td><td>14.6 &#181;s</td></tr>
 												<tr><td>Max / mean abs error vs golden</td><td>diff against M1 (measured)</td><td>0.00631 / 0.00205</td></tr>
 											</tbody>
 										</table>
@@ -273,7 +371,7 @@ assert np.allclose(P.sum(axis=1), 1.0)      # first test in the project</code></
 										<table class="perf-table">
 											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
 											<tbody>
-												<tr><td>Latency per forward pass</td><td>Python <code>timeit</code></td><td><span class="tbd">TBD</span></td></tr>
+												<tr><td>Latency per forward pass</td><td>Python <code>timeit</code>, 20k runs, N=4</td><td>8.0 &#181;s</td></tr>
 												<tr><td>Self-check (softmax rows sum to 1)</td><td><code>assert np.allclose(...)</code></td><td>PASS</td></tr>
 											</tbody>
 										</table>

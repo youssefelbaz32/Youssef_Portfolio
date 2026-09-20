@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 500" role="img" aria-label="Stacked bar chart of RTL cycle counts per stage at 1, 2 and 4 MAC lanes, showing the softmax stage fixed at 449 cycles while the matmul stages shrink">
+  <style>
+    .b-title{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:600;fill:#dce4ee}
+    .b-sub{font-family:system-ui,sans-serif;font-size:11px;fill:#8493a4}
+    .anno{font-family:system-ui,sans-serif;font-size:12px;fill:#8493a4}
+    .anno-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;fill:#8493a4}
+    .seg-lbl{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;fill:#dce4ee}
+    .seg-lbl-dim{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;fill:#0b1117}
+    .bg{fill:#141b24;stroke:#33404f;stroke-width:1.5}
+    .note{fill:#131c26;stroke:#33404f;stroke-width:1;stroke-dasharray:3 3}
+    .s-mm{fill:#1d3a44;stroke:#2dd4bf;stroke-width:1.25}
+    .s-soft{fill:#f59e0b;stroke:#f59e0b;stroke-width:1.25}
+    .s-rm{fill:#26313d;stroke:#4a5867;stroke-width:1.25}
+    .axis{stroke:#33404f;stroke-width:1}
+    .brace{stroke:#f59e0b;stroke-width:1.5;fill:none}
+  </style>
+
+  <rect class="bg" x="4" y="4" width="1112" height="492" rx="12"/>
+
+  <text class="b-title" x="32" y="42">Where the cycles actually go</text>
+  <text class="b-sub" x="32" y="62">Naive RTL datapath, N = D = DV = 4, measured in Icarus. 1 px = 1 clock cycle.</text>
+
+  <!-- legend -->
+  <rect class="s-mm"   x="720" y="32" width="12" height="12" rx="2"/>
+  <text class="anno"   x="738" y="43">QK&#8868; and P&#183;V</text>
+  <rect class="s-rm"   x="828" y="32" width="12" height="12" rx="2"/>
+  <text class="anno"   x="846" y="43">row_max</text>
+  <rect class="s-soft" x="912" y="32" width="12" height="12" rx="2"/>
+  <text class="anno"   x="930" y="43">softmax</text>
+
+  <!-- ===== LANES = 1 ===== -->
+  <text class="anno-mono" x="32" y="130">LANES = 1</text>
+  <text class="b-sub"     x="32" y="146">1 multiplier</text>
+  <rect class="s-mm"   x="150" y="108" width="97"  height="42" rx="3"/>
+  <rect class="s-rm"   x="247" y="108" width="17"  height="42"/>
+  <rect class="s-soft" x="264" y="108" width="449" height="42"/>
+  <rect class="s-mm"   x="713" y="108" width="102" height="42" rx="3"/>
+  <text class="seg-lbl"     x="185" y="134">97</text>
+  <text class="seg-lbl-dim" x="470" y="134">449</text>
+  <text class="seg-lbl"     x="750" y="134">102</text>
+  <text class="anno-mono"   x="838" y="134">659 cy total</text>
+
+  <!-- ===== LANES = 2 ===== -->
+  <text class="anno-mono" x="32" y="212">LANES = 2</text>
+  <text class="b-sub"     x="32" y="228">2 multipliers</text>
+  <rect class="s-mm"   x="150" y="190" width="49"  height="42" rx="3"/>
+  <rect class="s-rm"   x="199" y="190" width="17"  height="42"/>
+  <rect class="s-soft" x="216" y="190" width="449" height="42"/>
+  <rect class="s-mm"   x="665" y="190" width="54"  height="42" rx="3"/>
+  <text class="seg-lbl"     x="163" y="216">49</text>
+  <text class="seg-lbl-dim" x="422" y="216">449</text>
+  <text class="seg-lbl"     x="680" y="216">54</text>
+  <text class="anno-mono"   x="838" y="216">563 cy total</text>
+
+  <!-- ===== LANES = 4 ===== -->
+  <text class="anno-mono" x="32" y="294">LANES = 4</text>
+  <text class="b-sub"     x="32" y="310">4 multipliers</text>
+  <rect class="s-mm"   x="150" y="272" width="25"  height="42" rx="3"/>
+  <rect class="s-rm"   x="175" y="272" width="17"  height="42"/>
+  <rect class="s-soft" x="192" y="272" width="449" height="42"/>
+  <rect class="s-mm"   x="641" y="272" width="30"  height="42" rx="3"/>
+  <text class="seg-lbl"     x="152" y="332">25</text>
+  <text class="seg-lbl-dim" x="398" y="298">449</text>
+  <text class="seg-lbl"     x="644" y="332">30</text>
+  <text class="anno-mono"   x="838" y="298">515 cy total</text>
+
+  <!-- the point: softmax never moves -->
+  <line class="axis" x1="192" y1="352" x2="641" y2="352"/>
+  <text class="anno" x="252" y="372" fill="#f59e0b">449 cycles, identical in all three runs</text>
+
+  <rect class="note" x="150" y="396" width="880" height="66" rx="8"/>
+  <text class="anno" x="170" y="420">4x the multipliers made the matmuls 3.4x faster and the pipeline 1.28x faster. The</text>
+  <text class="anno" x="170" y="440">divider is serial, so adding MAC lanes only grows its share: 68% at one lane, 87% at four.</text>
+
+  <text class="b-sub" x="32" y="482">Stage counts overlap by a cycle at each handoff, so they sum slightly above the end-to-end figure.</text>
+</svg>

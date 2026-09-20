@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 700" role="img" aria-label="Block diagram of the online softmax datapath: key blocks stream through parallel dot4 units into a max tree and a shared exp ROM, which rebases a running max, running sum and accumulator before a single reciprocal divide produces the output row">
+  <style>
+    .b-title{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:600;fill:#dce4ee}
+    .b-sub{font-family:system-ui,sans-serif;font-size:11px;fill:#8493a4}
+    .port{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;fill:#8493a4}
+    .anno{font-family:system-ui,sans-serif;font-size:12px;fill:#8493a4}
+    .anno-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;fill:#8493a4}
+    .hot{font-family:system-ui,sans-serif;font-size:12px;fill:#f59e0b}
+    .bg{fill:#141b24;stroke:#33404f;stroke-width:1.5}
+    .blk{fill:#161e28;stroke:#33404f;stroke-width:1.5}
+    .unit{fill:#0f2a29;stroke:#2dd4bf;stroke-width:1.75}
+    .state{fill:#12202b;stroke:#7bd0ff;stroke-width:1.75}
+    .rom{fill:#2a2113;stroke:#f59e0b;stroke-width:1.75}
+    .note{fill:#131c26;stroke:#33404f;stroke-width:1;stroke-dasharray:3 3}
+    .data-wire{stroke:#2dd4bf;stroke-width:1.75;fill:none}
+    .ctrl-wire{stroke:#f59e0b;stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+    .ah-data{fill:#2dd4bf}
+    .ah-ctrl{fill:#f59e0b}
+  </style>
+  <defs>
+    <marker id="ah-data2" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+      <path class="ah-data" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+    <marker id="ah-ctrl2" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+      <path class="ah-ctrl" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="4" y="4" width="1112" height="692" rx="12"/>
+
+  <text class="b-title" x="30" y="40">Online softmax: one key block at a time</text>
+  <text class="b-sub" x="30" y="60">The score matrix is never built. Only the three boxed values persist between blocks, and their size does not depend on N.</text>
+
+  <!-- ===================== inputs ===================== -->
+  <rect class="blk" x="30" y="110" width="136" height="54" rx="6"/>
+  <text class="b-title" x="44" y="134" style="font-size:12px">q_mem[row_i]</text>
+  <text class="port" x="44" y="152">broadcast, held</text>
+
+  <rect class="blk" x="30" y="188" width="136" height="54" rx="6"/>
+  <text class="b-title" x="44" y="212" style="font-size:12px">k_mem[j_base+l]</text>
+  <text class="port" x="44" y="230">BLK keys, streams</text>
+
+  <rect class="blk" x="30" y="496" width="136" height="54" rx="6"/>
+  <text class="b-title" x="44" y="520" style="font-size:12px">v_mem[j][c]</text>
+  <text class="port" x="44" y="538">BLK rows, streams</text>
+
+  <!-- ===================== dot4 lanes ===================== -->
+  <rect class="unit" x="222" y="104" width="118" height="46" rx="6"/>
+  <text class="b-title" x="238" y="126" style="font-size:12px">dot4 lane 0</text>
+  <text class="port" x="238" y="142">SCALE_EN=1</text>
+
+  <rect class="unit" x="222" y="164" width="118" height="46" rx="6"/>
+  <text class="b-title" x="238" y="186" style="font-size:12px">dot4 lane 1</text>
+  <text class="port" x="238" y="202">1/&#8730;D folded in</text>
+
+  <text class="anno-mono" x="262" y="232">... BLK lanes</text>
+
+  <line class="data-wire" x1="166" y1="128" x2="216" y2="128" marker-end="url(#ah-data2)"/>
+  <path class="data-wire" d="M166,137 L192,137 L192,186 L216,186" marker-end="url(#ah-data2)"/>
+  <line class="data-wire" x1="166" y1="215" x2="216" y2="192" marker-end="url(#ah-data2)"/>
+
+  <!-- ===================== max tree ===================== -->
+  <rect class="blk" x="372" y="104" width="152" height="58" rx="6"/>
+  <text class="b-title" x="386" y="128" style="font-size:12px">max tree</text>
+  <text class="port" x="386" y="146">m_new = max(m_run, s)</text>
+  <line class="data-wire" x1="340" y1="127" x2="366" y2="127" marker-end="url(#ah-data2)"/>
+  <line class="data-wire" x1="340" y1="187" x2="366" y2="145" marker-end="url(#ah-data2)"/>
+  <text class="port" x="348" y="100">s_blk[]</text>
+
+  <!-- ===================== exp rom ===================== -->
+  <rect class="rom" x="372" y="242" width="152" height="86" rx="6"/>
+  <text class="b-title" x="386" y="266" style="font-size:12px">exp_rom</text>
+  <text class="port" x="386" y="284">256 entries, Q8.8</text>
+  <text class="port" x="386" y="300">x in [-8, 0] only</text>
+  <text class="port" x="386" y="316">one ROM, two uses</text>
+
+  <path class="data-wire" d="M448,162 L448,236" marker-end="url(#ah-data2)"/>
+  <text class="port" x="455" y="200">m_new</text>
+  <path class="data-wire" d="M352,208 L360,208 L360,270 L366,270" marker-end="url(#ah-data2)"/>
+  <text class="port" x="286" y="266">s_j - m_new</text>
+
+  <!-- ===================== running state ===================== -->
+  <rect class="note" x="590" y="86" width="340" height="360" rx="10"/>
+  <text class="b-title" x="610" y="112" style="font-size:12px">RUNNING STATE</text>
+  <text class="port" x="610" y="130">all that survives between blocks</text>
+
+  <rect class="state" x="610" y="146" width="300" height="52" rx="6"/>
+  <text class="b-title" x="626" y="168" style="font-size:12px">m_run</text>
+  <text class="port" x="626" y="186">running max, 1 word</text>
+
+  <rect class="state" x="610" y="212" width="300" height="60" rx="6"/>
+  <text class="b-title" x="626" y="234" style="font-size:12px">l_run &#8592; l_run &#215; corr + &#931; e_j</text>
+  <text class="port" x="626" y="252">running sum of exps, 1 word</text>
+
+  <rect class="state" x="610" y="286" width="300" height="72" rx="6"/>
+  <text class="b-title" x="626" y="308" style="font-size:12px">acc[c] &#8592; acc[c] &#215; corr + &#931; e_j&#183;V[j][c]</text>
+  <text class="port" x="626" y="326">DV words, Q16.16</text>
+  <text class="port" x="626" y="342">one multiplier reused DV times</text>
+
+  <text class="hot" x="610" y="388">state size = DV + 2 words</text>
+  <text class="hot" x="610" y="406">independent of sequence length</text>
+  <text class="anno-mono" x="610" y="430">naive path needs 2N&#178; words here</text>
+
+  <!-- corr feeding the rebase -->
+  <path class="ctrl-wire" d="M524,270 L562,270 L562,240 L604,240" marker-end="url(#ah-ctrl2)"/>
+  <path class="ctrl-wire" d="M562,270 L562,316 L604,316" marker-end="url(#ah-ctrl2)"/>
+  <text class="hot" x="529" y="262">corr</text>
+  <line class="data-wire" x1="524" y1="133" x2="604" y2="170" marker-end="url(#ah-data2)"/>
+  <path class="data-wire" d="M166,522 L575,522 L575,330 L604,330" marker-end="url(#ah-data2)"/>
+  <text class="port" x="300" y="516">V rows, folded in after the rebase</text>
+
+  <!-- ===================== output ===================== -->
+  <rect class="blk" x="968" y="146" width="124" height="70" rx="6"/>
+  <text class="b-title" x="984" y="170" style="font-size:12px">reciprocal</text>
+  <text class="port" x="984" y="188">r = 2^24 / l_run</text>
+  <text class="port" x="984" y="204">ONE per row</text>
+
+  <rect class="blk" x="968" y="252" width="124" height="70" rx="6"/>
+  <text class="b-title" x="984" y="276" style="font-size:12px">scale out</text>
+  <text class="port" x="984" y="294">O[c] = acc[c]&#215;r</text>
+  <text class="port" x="984" y="310">saturate to Q8.8</text>
+
+  <line class="data-wire" x1="930" y1="240" x2="962" y2="190" marker-end="url(#ah-data2)"/>
+  <line class="data-wire" x1="930" y1="320" x2="962" y2="292" marker-end="url(#ah-data2)"/>
+  <path class="ctrl-wire" d="M1030,216 L1030,246" marker-end="url(#ah-ctrl2)"/>
+
+  <!-- ===================== the loop ===================== -->
+  <path class="ctrl-wire" d="M760,446 L760,486 L279,486 L279,244" marker-end="url(#ah-ctrl2)"/>
+  <text class="hot" x="600" y="478">next key block</text>
+
+  <!-- ===================== the point ===================== -->
+  <rect class="note" x="30" y="560" width="1060" height="110" rx="8"/>
+  <text class="b-title" x="52" y="588" style="font-size:12px">Why the rebase works</text>
+  <text class="anno" x="52" y="612">When a later block holds a bigger max, everything already accumulated is wrong by exactly exp(m_old - m_new). That is a constant, not a</text>
+  <text class="anno" x="52" y="632">per-element correction, so one multiply rebases the whole history. The naive path instead waits for the full row, stores S and P, and runs</text>
+  <text class="anno" x="52" y="652">one divide per element. This path stores DV + 2 words and runs one divide per row.</text>
+</svg>
