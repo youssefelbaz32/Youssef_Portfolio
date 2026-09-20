@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 620" role="img" aria-label="Block diagram of the ZUBoard system: ARM cores and DDR on the processing system side, AXI DMA moving data to and from the accelerator in programmable logic, AXI-Lite control registers with per-phase cycle counters, and an interrupt back to the processor">
+  <style>
+    .b-title{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:600;fill:#dce4ee}
+    .b-sub{font-family:system-ui,sans-serif;font-size:11px;fill:#8493a4}
+    .port{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;fill:#8493a4}
+    .anno{font-family:system-ui,sans-serif;font-size:12px;fill:#8493a4}
+    .hot{font-family:system-ui,sans-serif;font-size:12px;fill:#f59e0b}
+    .zone{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;fill:#5c6b7c;letter-spacing:0.14em}
+    .bg{fill:#141b24;stroke:#33404f;stroke-width:1.5}
+    .blk{fill:#161e28;stroke:#33404f;stroke-width:1.5}
+    .unit{fill:#0f2a29;stroke:#2dd4bf;stroke-width:1.75}
+    .ctrl{fill:#2a2113;stroke:#f59e0b;stroke-width:1.75}
+    .ps{fill:#12202b;stroke:#7bd0ff;stroke-width:1.5}
+    .zonebox{fill:none;stroke:#33404f;stroke-width:1;stroke-dasharray:4 4}
+    .data-wire{stroke:#2dd4bf;stroke-width:2;fill:none}
+    .ctrl-wire{stroke:#f59e0b;stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+    .ah-data{fill:#2dd4bf}
+    .ah-ctrl{fill:#f59e0b}
+  </style>
+  <defs>
+    <marker id="d" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path class="ah-data" d="M0,0 L8,4 L0,8 z"/></marker>
+    <marker id="c" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto"><path class="ah-ctrl" d="M0,0 L8,4 L0,8 z"/></marker>
+  </defs>
+
+  <rect class="bg" x="4" y="4" width="1112" height="612" rx="12"/>
+  <text class="b-title" x="30" y="40">ZUBoard 1CG: what actually runs the accelerator</text>
+  <text class="b-sub" x="30" y="60">The host is two ARM cores on the same die, not a laptop on a cable. That is why there is no packet protocol anywhere in this picture.</text>
+
+  <!-- zones -->
+  <rect class="zonebox" x="28" y="92" width="300" height="440" rx="8"/>
+  <text class="zone" x="44" y="114">PROCESSING SYSTEM</text>
+  <rect class="zonebox" x="360" y="92" width="732" height="440" rx="8"/>
+  <text class="zone" x="376" y="114">PROGRAMMABLE LOGIC</text>
+
+  <!-- PS side -->
+  <rect class="ps" x="52" y="136" width="252" height="66" rx="6"/>
+  <text class="b-title" x="70" y="160" style="font-size:12px">2x Cortex-A53</text>
+  <text class="port" x="70" y="178">PYNQ, Python, numpy</text>
+  <text class="port" x="70" y="194">imports the golden model</text>
+
+  <rect class="ps" x="52" y="230" width="252" height="58" rx="6"/>
+  <text class="b-title" x="70" y="254" style="font-size:12px">1 GB LPDDR4</text>
+  <text class="port" x="70" y="272">pynq.allocate() buffers</text>
+
+  <rect class="blk" x="52" y="420" width="252" height="58" rx="6"/>
+  <text class="b-title" x="70" y="444" style="font-size:12px">GIC</text>
+  <text class="port" x="70" y="462">pl_ps_irq0[0], level</text>
+
+  <!-- DMA -->
+  <rect class="blk" x="392" y="206" width="150" height="96" rx="6"/>
+  <text class="b-title" x="410" y="230" style="font-size:12px">AXI DMA</text>
+  <text class="port" x="410" y="248">simple mode</text>
+  <text class="port" x="410" y="264">MM2S / S2MM</text>
+  <text class="port" x="410" y="282">64b HP, 32b AXIS</text>
+
+  <!-- accelerator -->
+  <rect class="unit" x="608" y="176" width="220" height="156" rx="8"/>
+  <text class="b-title" x="628" y="202" style="font-size:12px">attention_axi</text>
+  <text class="port" x="628" y="222">flash_top, online softmax</text>
+  <text class="port" x="628" y="240">Q8.8, BLK MAC lanes</text>
+  <text class="port" x="628" y="264">s_axis  -&gt;  Q, K, V</text>
+  <text class="port" x="628" y="282">m_axis  -&gt;  O</text>
+  <text class="port" x="628" y="308">216 DSPs available here</text>
+
+  <!-- control regs -->
+  <rect class="ctrl" x="876" y="150" width="200" height="208" rx="8"/>
+  <text class="b-title" x="894" y="176" style="font-size:12px">axil_regs</text>
+  <text class="port" x="894" y="196">CTRL / STATUS / ISR</text>
+  <text class="port" x="894" y="218">CYC_LOAD</text>
+  <text class="port" x="894" y="234">CYC_LOAD_STALL</text>
+  <text class="port" x="894" y="250">CYC_COMPUTE</text>
+  <text class="port" x="894" y="266">CYC_STORE</text>
+  <text class="port" x="894" y="282">CYC_STORE_STALL</text>
+  <text class="port" x="894" y="298">CYC_TOTAL</text>
+  <text class="port" x="894" y="322">PARAM0..2, BUILD_ID</text>
+  <text class="hot"  x="894" y="346">armed gate lives here</text>
+
+  <!-- data wires -->
+  <path class="data-wire" d="M304,259 L386,259" marker-end="url(#d)"/>
+  <text class="port" x="312" y="250">HP0, 64b</text>
+  <path class="data-wire" d="M542,236 L602,220" marker-end="url(#d)"/>
+  <text class="port" x="548" y="212">MM2S</text>
+  <path class="data-wire" d="M828,288 L860,288 L860,400 L560,400 L560,290 L542,282" marker-end="url(#d)"/>
+  <text class="port" x="660" y="394">S2MM, O back to DDR</text>
+
+  <!-- control wires -->
+  <path class="ctrl-wire" d="M304,168 L340,168 L340,124 L976,124 L976,144" marker-end="url(#c)"/>
+  <text class="hot" x="600" y="118">AXI4-Lite from M_AXI_HPM0_LPD</text>
+  <path class="ctrl-wire" d="M876,254 L840,254" marker-end="url(#c)"/>
+  <path class="ctrl-wire" d="M976,358 L976,452 L310,452" marker-end="url(#c)"/>
+  <text class="hot" x="600" y="446">irq, level, cleared by writing ISR</text>
+
+  <!-- the point -->
+  <rect class="blk" x="360" y="548" width="732" height="52" rx="8"/>
+  <text class="anno" x="380" y="572">Transfer is about 0.07 ms at N=128 against 8.96 ms of compute, so the link is not the bottleneck and</text>
+  <text class="anno" x="380" y="590">none of the framing, CRC or byte-assembly a UART design would need exists at all.</text>
+
+  <rect class="blk" x="28" y="548" width="300" height="52" rx="8"/>
+  <text class="anno" x="48" y="572">The golden model runs HERE,</text>
+  <text class="anno" x="48" y="590">in the same Python process.</text>
+</svg>

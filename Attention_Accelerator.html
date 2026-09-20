@@ -94,8 +94,8 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 											<tr><td>M3</td><td>CUDA naive kernel (float32)</td><td>max abs err <b>1.192093e-07</b> = the float32 floor (2<sup>-23</sup>)</td><td>Done</td></tr>
 											<tr><td>M4</td><td>CUDA tiled kernel (shared memory)</td><td>max abs err <b>1.192093e-07</b>, bit-identical to M3</td><td>Done</td></tr>
 											<tr><td>M5</td><td>SystemVerilog RTL core (Q8.8)</td><td>full datapath, <b>52/52 values exact</b> vs the integer spec at all four stages</td><td>Done</td></tr>
-											<tr><td>M6</td><td>Host to FPGA comms (UART, packet FSM, AXIS)</td><td>byte bridge and backpressure, host driven from Python</td><td>Needs board</td></tr>
-											<tr><td>M7</td><td>FPGA bring-up on Vivado</td><td>synthesis, timing closure, on-hardware diff vs the fixed-point model</td><td>Needs board</td></tr>
+											<tr><td>M6</td><td>Host to FPGA link (AXI-Stream + DMA, PYNQ)</td><td>packaged as an AXI IP with per-phase cycle counters and a completion interrupt; caught a counter race in integration</td><td>In progress</td></tr>
+											<tr><td>M7</td><td>FPGA bring-up on ZUBoard 1CG (XCZU1CG)</td><td>synthesis, timing closure, on-hardware diff vs the fixed-point model</td><td>Next</td></tr>
 											<tr><td>M8</td><td>FlashAttention-lite, RTL (online softmax)</td><td><b>360 cy on one multiplier</b>, beating the naive core on four (515 cy); N&#178; buffers gone</td><td>Done</td></tr>
 											<tr><td>M8</td><td>FlashAttention-lite, CUDA and Triton</td><td>fused kernel verified on CPU at N=512 including causal and ragged tiles</td><td>Code done, timings pending GPU</td></tr>
 										</tbody>

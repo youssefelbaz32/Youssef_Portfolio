@@ -76,6 +76,69 @@
 								<!-- Keep hr.entry-sep between entries. No em dashes.               -->
 								<!-- ============================================================= -->
 
+								<!-- ENTRY: M6 -->
+								<article>
+									<span class="entry-date">2026-09-19</span><span class="tag wip">M6 &middot; in progress</span>
+									<h2>The counters were lying, and the testbench only caught it because it did not trust them</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>I built cycle counters into the accelerator so the host could measure it properly. The first integration test compared what the hardware <em>reported</em> against what the testbench independently <em>observed</em>, and they disagreed by four cycles. Four is small enough to shrug at and exactly the kind of number you must not shrug at, because it meant every measurement the design would ever produce was quietly short.</p></div>
+
+									<h3>The board changed the design</h3>
+									<p>The target is an Avnet ZUBoard 1CG, which is a Zynq UltraScale+ part: dual Cortex-A53, 1 GB of LPDDR4, 216 DSP slices and 3.8 Mb of block RAM, with an official PYNQ image. I had planned a UART link with a packet framer and a CRC. On this board that is the wrong design, and I worked that out by computing the link budget before writing any of it.</p>
+									<p>Over AXI-DMA an N=128 problem moves in about 0.07 ms against 8.96 ms of compute. Over a 115200 baud UART the same transfer takes 5.7 seconds, which is 635 times the compute, so every end-to-end timing would have been a measurement of an FTDI chip. The framing, the CRC, the byte assembler and the flow-control question all exist to survive a link that is hundreds of times too slow. None of it survived contact with the actual hardware.</p>
+									<div class="image fit"><img src="images/zynq_system.svg" alt="Block diagram of the ZUBoard system: ARM cores and DDR on the processing system side, AXI DMA moving data to and from the accelerator in programmable logic, AXI-Lite control registers holding per-phase cycle counters, and a level interrupt back to the processor" /></div>
+									<p>The nicest consequence is that the host is Python on the A53, so it can import the bit-exact integer model directly and diff the hardware output in the same process. The golden model becomes the on-board self test. There is no protocol to get wrong because there is no protocol.</p>
+
+									<h3>Error one: an interface that could not exist</h3>
+									<p>My accelerator took all of Q, K and V in a single beat on flat buses. At the toy size that is 256 bits and perfectly reasonable. I had never asked what it becomes at a real size.</p>
+									<pre class="mono-block"><code>N=4    D=4     Q_flat =     256 bits
+N=16   D=16    Q_flat =   4,096 bits
+N=64   D=64    Q_flat =  65,536 bits
+N=128  D=64    Q_flat = 131,072 bits</code></pre>
+									<p>There is no 131,072 bit port. The interface was not slow or inelegant, it was impossible, and it had been sitting in verified, bit-exact, fully tested RTL the whole time because nothing in simulation cares how wide a bus is. Toy dimensions had hidden a structural problem behind a working design, which is the same failure mode as the loop that read <code>j &lt; D</code> instead of <code>j &lt; N</code> and passed because N and D were both 4.</p>
+									<p>Replacing it with AXI4-Stream, one Q8.8 word per beat, took an afternoon. The proof that the arithmetic survived is that the compute phase is still 280 cycles at N=4 and 7200 at N=16, identical to before, and still bit-exact against the spec.</p>
+
+									<h3>Error two: the counters started after the data did</h3>
+									<p>Six counters, not one, because "how fast is the accelerator" is not a single number on a system like this. Load, compute and store are timed separately, and load and store each also count the cycles lost waiting on a stalled stream. That last split is the one that earns its keep: if the load phase is long and almost all of it is stalled, the DMA is starving the datapath and adding MAC lanes will do nothing, whereas if the stall count is near zero the transfer really is transfer. Those two situations look identical if you only measure elapsed time and they have opposite fixes.</p>
+									<p>Then the integration test disagreed with itself:</p>
+									<pre class="mono-block"><code>CYC_LOAD matches observed        got=70  exp=74   FAIL
+CYC_LOAD_STALL matches observed  got=25  exp=26   FAIL
+CYC_TOTAL brackets busy          372 &lt; 376 busy   FAIL</code></pre>
+									<p>AXI DMA starts moving as soon as its descriptor is submitted. Nothing makes it wait for my control register. So the stream arrived, the accelerator began loading, and then the host wrote START, which zeroed the counters underneath a run that was already several cycles old. The arithmetic was perfect. The answer was bit-exact. Only the measurement was wrong, and only by the amount the host happened to be late, which means it would have varied run to run and looked like noise rather than a bug.</p>
+									<p>The fix is four lines: hold <code>tready</code> low until the host has armed the block, so data waits at the door until something is ready to measure it.</p>
+									<pre class="mono-block"><code>always_ff @(posedge aclk) begin
+  if      (!aresetn)   armed &lt;= 1'b0;
+  else if (soft_reset) armed &lt;= 1'b0;
+  else if (start)      armed &lt;= 1'b1;
+  else if (done_pulse) armed &lt;= 1'b0;
+end
+assign s_axis_tready = core_s_ready &amp; armed;</code></pre>
+									<p>That turns a required ordering into a hardware guarantee rather than a convention documented in a driver that someone will eventually not read. I had in fact written the driver to arm first, so on my own code path the bug would never have fired. It would have waited for the first person to submit the DMA descriptor early.</p>
+
+									<h3>Why the test found it and a normal test would not</h3>
+									<p>A conventional integration test checks that the output is correct and that the interrupt fires. This one passed both of those. It failed on an assertion I nearly did not write: that the numbers the hardware <em>reports</em> must equal the numbers the testbench <em>watched it produce</em>, counted independently from the internal phase signals. Measurement instrumentation is code, it can be wrong, and the failure mode is not a crash, it is plausible numbers that are slightly false forever.</p>
+									<p>I also made the total a separately counted value rather than the sum of the phases, so a gap between them is itself a signal. On the board that gap turns out to be useful rather than alarming: it is the time between the host writing START and the DMA delivering the first beat, which is exactly the DMA setup latency, and nothing else would have told me what it was.</p>
+
+									<div class="callout take"><span class="k">Takeaway</span><p>Both errors had been invisible for the same reason: nothing in simulation cares how wide a bus is, and nothing in a correctness test cares whether the clock is honest. Asking what the design becomes at a real size found the first, and refusing to trust my own instrumentation found the second. Neither showed up as a wrong answer, which is exactly why they were still there.</p></div>
+
+									<h3>Performance</h3>
+									<p>Simulated cycle counts and the device budget for the target part. Real utilization and fmax need a Vivado run, which is next.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>Reported vs observed cycles</td><td>integration testbench, independent count</td><td>exact on all five counters</td></tr>
+												<tr><td>Compute phase, N=4 / N=16</td><td>counter, unchanged by the interface rewrite</td><td>280 / 7,200 cy</td></tr>
+												<tr><td>Transfer vs compute, N=128</td><td>link budget against measured cycles</td><td>0.07 ms vs 8.96 ms</td></tr>
+												<tr><td>Block RAM ceiling, D=DV=64</td><td>3.8 Mb on XCZU1CG</td><td>naive N=294, streaming N=972</td></tr>
+												<tr><td>DSP cost at BLK=16</td><td>one DSP48E2 per 16x16 multiply</td><td>~19 of 216 (8.8%)</td></tr>
+												<tr><td>fmax, LUT / FF / DSP / BRAM</td><td>Vivado timing and utilization</td><td><span class="tbd">pending synthesis</span></td></tr>
+											</tbody>
+										</table>
+									</div>
+								</article>
+
+								<hr class="entry-sep" />
+
 								<!-- ENTRY: M8 GPU -->
 								<article>
 									<span class="entry-date">2026-09-18</span><span class="tag done">M8 &middot; GPU</span>
