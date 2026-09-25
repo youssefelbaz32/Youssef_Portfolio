@@ -76,6 +76,61 @@
 								<!-- Keep hr.entry-sep between entries. No em dashes.               -->
 								<!-- ============================================================= -->
 
+								<!-- ENTRY: M8 following the profile -->
+								<article>
+									<span class="entry-date">2026-09-25</span><span class="tag done">M8 &middot; GPU, optimized</span>
+									<h2>The model got the traffic right and the bottleneck wrong</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>My roofline model said the CUDA kernel was starved by L2 bandwidth. Nsight Compute agreed about the traffic almost to the byte and disagreed about the limit: L1 was saturated first, by loads that used 7 of every 32 bytes they fetched. Fixing the thing the profiler named, then the thing the model named, made the kernel 3.7x faster.</p></div>
+
+									<h3>What the counters said</h3>
+									<p>At N=4096 the model predicted 17.2 GB moving from L2 to L1 at D=128 and 8.59 GB at D=64. Nsight counted 19.4 GB and 8.58 GB. That part of the model was right. DRAM saw 85 MB, well under 1% of its bandwidth, which was also right. The part it missed:</p>
+									<pre class="mono-block"><code>L1/TEX throughput         98%    &lt;- the actual limit
+L2 throughput             42%
+useful bytes per sector   7.1 of 32
+warps active              97%
+top stalls                long scoreboard 57, MIO throttle 57 cycles</code></pre>
+									<p>Occupancy was fine and the arithmetic units were idle. Every warp was waiting on memory, and the memory it was waiting on was mostly waste. Thread <code>tid</code> computed its dot product by walking its own key row, <code>K[j*D + k]</code>, so the 32 lanes of a warp sat D floats apart. Every load touched 32 different sectors and used 4 bytes from each. My model assumed each byte fetched from L2 was a byte used. The hardware did not care what I assumed.</p>
+
+									<h3>Fix the limit the profiler named</h3>
+									<p>K now comes through shared memory 32 feature columns at a time, loaded so consecutive threads read consecutive floats of one row, and stored transposed with a pitch of BC+1 so neither the store nor the read has bank conflicts. The accumulation order over k did not change, so every checked case reports exactly the same error as before. N=4096, D=128 went from 28.3 ms to 19.4 ms, 1.46x. Less than I hoped, and the reason is the next limit: with L1 cleared, re-streaming K and V from L2 once per query row is what is left.</p>
+
+									<h3>Then the limit the model named</h3>
+									<p>The second change is the real FlashAttention move. One warp owns one query row, and a block of WR warps shares every K and V tile through shared memory, so each byte from L2 now serves WR queries instead of one. A useful side effect: every reduction is now a warp shuffle inside one warp, so there is no block-wide scratch at all, and the race from the last post cannot happen in this design.</p>
+									<p>I swept WR instead of guessing it. Four rows per block took 25.8 ms, eight took 10.4, sixteen took 7.6, and thirty-two does not fit in the default 48 KB of shared memory. All 24 sweep cases pass against float64, and <code>compute-sanitizer</code> racecheck, memcheck and synccheck are clean.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>N, D</th><th>original</th><th>coalesced</th><th>query-tiled</th><th>speedup</th></tr></thead>
+											<tbody>
+												<tr><td>512, 128</td><td>0.479 ms</td><td>0.340</td><td>0.181</td><td>2.7x</td></tr>
+												<tr><td>2048, 128</td><td>7.08</td><td>5.15</td><td>2.33</td><td>3.0x</td></tr>
+												<tr><td>4096, 64</td><td>14.5</td><td>11.1</td><td>4.71</td><td>3.1x</td></tr>
+												<tr><td>4096, 128</td><td>28.3</td><td>19.4</td><td>7.59</td><td>3.7x</td></tr>
+												<tr><td>4096, 128, causal</td><td>14.3</td><td>10.2</td><td>3.95</td><td>3.6x</td></tr>
+											</tbody>
+										</table>
+									</div>
+									<p>At N=128 the new kernel is slower, because eight blocks cannot fill 36 SMs. Small problems want small blocks, and I left that alone rather than add a dispatch heuristic I have not measured.</p>
+
+									<div class="callout take"><span class="k">Takeaway</span><p>A model tells you what should limit a kernel. A profiler tells you what does. Mine was right about the bytes and wrong about which unit ran out first, and the only way to know was to count. The kernel now does 1.13 TFLOP/s, up from 0.30, and the next 4x is tensor cores, which is exactly the gap to SDPA.</p></div>
+
+									<h3>Performance</h3>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>L2 to L1 traffic, N=4096 D=128</td><td>Nsight Compute vs the model</td><td>19.4 GB vs 17.2 GB</td></tr>
+												<tr><td>Binding unit before the fix</td><td>Nsight speed of light</td><td>L1/TEX at 98%</td></tr>
+												<tr><td>Latency, N=4096 D=128</td><td><code>cudaEvent</code>, mean of 20 launches</td><td>28.3 ms to 7.59 ms (3.7x)</td></tr>
+												<tr><td>Throughput, same shape</td><td>attention FLOPs / time</td><td>303 GFLOP/s to 1.13 TFLOP/s</td></tr>
+												<tr><td>Percent of SDPA, fp32</td><td>same shape and dtype</td><td>6.0% to 22%</td></tr>
+												<tr><td>Correctness</td><td>24-case sweep vs float64, three sanitizers</td><td>24/24, 0 hazards</td></tr>
+											</tbody>
+										</table>
+									</div>
+								</article>
+
+								<hr class="entry-sep" />
+
 								<!-- ENTRY: M8 on a real GPU -->
 								<article>
 									<span class="entry-date">2026-09-25</span><span class="tag done">M8 &middot; GPU, measured</span>
@@ -130,7 +185,7 @@ if (lane == 0) scratch[warp] = v;   // warp 0 writes scratch[0]</code></pre>
 									<p>I measured the ceilings on this card rather than trusting a spec sheet: 11.8 TFLOP/s for FP32, 39.2 TFLOP/s on the fp16 tensor cores, 223 GB/s from DRAM and 847 GB/s from the 32 MB L2, with the clock holding at 2.4 GHz.</p>
 									<p>Each of the N thread blocks streams all of K and V, so at N=4096 and D=128 the kernel moves 17.2 GB to do 8.6 GFLOP. That is 0.5 FLOP per byte. K and V together are only 4 MB, so they live in L2, and DRAM barely notices. Against L2 the roof at 0.5 FLOP per byte is 424 GFLOP/s, and the kernel does 303, which is 72% of it. The kernel is not slow at arithmetic. It uses 2.6% of the FP32 ceiling because it spends almost all of L2's bandwidth re-reading the same K and V once per query row.</p>
 									<p>That makes the next step unambiguous. A block that owns a tile of B query rows reads K and V once for all of them, which multiplies the intensity by B. At B=64 the kernel crosses the L2 ridge and tensor cores start to matter. That is the actual FlashAttention design, arrived at by measurement instead of by copying it. For comparison, the Triton kernel already does this and reaches 65% of the tensor-core ceiling, against 88% for cuDNN.</p>
-									<p>One caveat. That L2 traffic is modeled, not counted. Nsight Compute would count it directly, and it is next once the GPU counter permission survives a driver update.</p>
+									<p>One caveat. That L2 traffic is modeled, not counted. <b>Update:</b> Nsight Compute later counted 19.4 GB, close to the model, but showed L1 was the real limit. See the next entry.</p>
 									<div class="callout take"><span class="k">Takeaway</span><p>Every one of these was invisible until the code ran on the real thing: a race the emulator structurally could not see, a tolerance measuring the wrong precision, a tile that fit one GPU and not another, and a baseline that silently swapped itself out. Check which kernel your baseline actually runs, and when an error changes between identical runs, stop reading the math and start looking for two threads touching one address.</p></div>
 
 									<h3>Performance</h3>
@@ -146,7 +201,7 @@ if (lane == 0) scratch[warp] = v;   // warp 0 writes scratch[0]</code></pre>
 												<tr><td>CUDA arithmetic intensity</td><td>bytes modeled from the access pattern</td><td>0.5 FLOP/byte (L2 bound)</td></tr>
 												<tr><td>CUDA share of L2 roof</td><td>303 GFLOP/s vs 424 at 0.5 FLOP/byte</td><td>72%</td></tr>
 												<tr><td>Triton / cuDNN share of tensor-core peak</td><td>vs a measured 39.2 TFLOP/s fp16 GEMM</td><td>65% / 88%</td></tr>
-												<tr><td>L2 traffic, occupancy, stall reasons</td><td>Nsight Compute</td><td><span class="tbd">pending counter access</span></td></tr>
+												<tr><td>L2 traffic, occupancy, stall reasons</td><td>Nsight Compute</td><td>19.4 GB, 97% warps active, L1-bound (next entry)</td></tr>
 											</tbody>
 										</table>
 									</div>
@@ -256,7 +311,7 @@ N=512   D=128  causal=0  max_err=3.102e-07  PASS</code></pre>
 												<tr><td>Score row storage per query</td><td>declared state in the kernel</td><td>0 (never materialized)</td></tr>
 												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td>28.3 at N=4096, D=128</td></tr>
 												<tr><td>Percent of PyTorch SDPA</td><td>Triton <code>do_bench</code> median, fp16, vs cuDNN</td><td>74 to 131%</td></tr>
-												<tr><td>Occupancy, DRAM throughput</td><td>Nsight Compute</td><td><span class="tbd">pending counter access</span></td></tr>
+												<tr><td>Occupancy, DRAM throughput</td><td>Nsight Compute, N=4096</td><td>97% warps active, DRAM under 1%</td></tr>
 											</tbody>
 										</table>
 									</div>
