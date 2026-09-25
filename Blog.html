@@ -76,6 +76,84 @@
 								<!-- Keep hr.entry-sep between entries. No em dashes.               -->
 								<!-- ============================================================= -->
 
+								<!-- ENTRY: M8 on a real GPU -->
+								<article>
+									<span class="entry-date">2026-09-25</span><span class="tag done">M8 &middot; GPU, measured</span>
+									<h2>The emulator said pass. The GPU said 0.28.</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>The fused CUDA kernel passed every emulated test. Its first run on a real GPU failed about half the N=512 cases, with errors up to 0.28 that changed from run to run. It was a race, it lived exactly on the emulation boundary, and the harness could never have found it. Then the baseline turned out not to be the kernel I thought it was either.</p></div>
+
+									<h3>Nondeterministic error is a fingerprint</h3>
+									<p>The hardware is an RTX 4070 Laptop GPU (Ada, sm_89, 36 SMs) on native Windows with CUDA 13.4. Toy dimensions matched the golden file. Then the sweep printed this:</p>
+									<pre class="mono-block"><code>N=512  D=32   causal=0  max_err=1.998e-02
+N=512  D=64   causal=0  max_err=8.187e-02
+N=512  D=128  causal=0  max_err=2.843e-07   &lt;- fine this time
+N=512  D=128  causal=1  max_err=2.777e-01</code></pre>
+									<p>Re-running the same case gave a different answer each time. A math bug is deterministic. An indexing bug is deterministic. When the same input produces a correct answer on one run and a wrong one on the next, the answer depends on scheduling, and that means a race.</p>
+
+									<h3>Where it was</h3>
+									<p>Every tile runs two block-wide reductions back to back: the max, for the new running max, then the sum of exponentials. Each works in two steps. Every warp reduces its 32 values with shuffles and writes a partial into <code>scratch[warp]</code>, then a barrier. Thread 0 folds the partials and writes the answer into <code>scratch[0]</code>, then a barrier, then every thread reads <code>scratch[0]</code>.</p>
+									<pre class="mono-block"><code>if (threadIdx.x == 0) scratch[0] = v;
+__syncthreads();
+return scratch[0];          // read the max ...
+// ... and the very next call starts with
+if (lane == 0) scratch[warp] = v;   // warp 0 writes scratch[0]</code></pre>
+									<p>Nothing sits between reading the max and starting the sum. Warps are not in lockstep, so a fast warp 0 reads the max, runs straight into the sum, and writes its partial sum into <code>scratch[warp]</code>, which for warp 0 is <code>scratch[0]</code>. A slower warp that has not read the max yet now reads a partial sum and uses it as the max. Its correction factor <code>exp(m_run - m_new)</code> is computed against garbage, and its output columns come out wrong.</p>
+									<p>The fix is one more slot. The answer goes through <code>scratch[32]</code>, which the partials never touch. It is only written between a reduction's two barriers and only read after the second, and it cannot be written again until every thread has passed the next reduction's first barrier, which every thread reaches only after its read. So it is safe without the extra barrier that the obvious fix would have added to every tile. <code>compute-sanitizer --tool racecheck</code> reports 21 hazards before and 0 after, and 90 repeats of the failing cases now pass.</p>
+
+									<h3>Why the harness missed it</h3>
+									<p>In the last post I wrote that the CPU harness proves nothing about real races. That turned out to be the exact caveat that bit. The emulation boundary was the two reduction functions, and the emulated versions happened to read the answer and then wait at one more barrier. The GPU versions did not. On top of that the emulator runs threads one at a time, so no warp can ever overtake another. The bug lived in precisely the code the harness replaced.</p>
+									<p>I would still build the harness again. It found every indexing and tail-tile bug before the GPU saw the code. It just cannot find the class of bug that only exists when things run at the same time, and the only tool that does is the one built for it.</p>
+
+									<h3>The baseline was not the kernel I thought</h3>
+									<p>I had written that SDPA, PyTorch's built-in attention, dispatches to FlashAttention-2 and cuDNN. On the Windows build of PyTorch neither is compiled in, and SDPA quietly falls back to the memory-efficient kernel. The only hint is a one-line warning. My Triton kernel was reading 100 to 123% of SDPA, which looked like a result until I forced each backend in turn and found two of them missing. PyTorch 2.14 brings cuDNN attention back, so the table below reports both. FlashAttention-2 is still absent from every official Windows build.</p>
+									<p>Two smaller bugs came out of the same run. The Triton fp32 check was failing at 2e-3, because <code>tl.dot</code> on fp32 inputs defaults to TF32 and keeps about 10 mantissa bits; asking for IEEE brings it to 1e-6. And fp32 at D=128 needed 113 KB of shared memory against the 99 KB an Ada block gets, which a card with more shared memory would have hidden.</p>
+
+									<h3>The numbers</h3>
+									<p>Triton, fp16, 16 heads, <code>do_bench</code> median. Percent is Triton's speed relative to each backend, so above 100% is faster.</p>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>N, D</th><th>Triton ms</th><th>% of cuDNN</th><th>% of mem-efficient</th></tr></thead>
+											<tbody>
+												<tr><td>512, 128</td><td>0.117</td><td>76%</td><td>98%</td></tr>
+												<tr><td>2048, 64</td><td>0.516</td><td>102%</td><td>119%</td></tr>
+												<tr><td>2048, 128</td><td>1.34</td><td>76%</td><td>107%</td></tr>
+												<tr><td>4096, 64</td><td>2.15</td><td>96%</td><td>126%</td></tr>
+												<tr><td>4096, 128</td><td>5.40</td><td>74%</td><td>110%</td></tr>
+												<tr><td>4096, 128, causal</td><td>2.85</td><td>75%</td><td>108%</td></tr>
+											</tbody>
+										</table>
+									</div>
+									<p>Against cuDNN, Triton is at parity for D=64 and about three quarters of the speed at D=128. One correction to the last post: I wrote that this kernel uses no tensor cores. That is true of the CUDA kernel, not the Triton one, because <code>tl.dot</code> on fp16 tiles lowers to MMA instructions. That is most of the gap between the two implementations.</p>
+									<p>The CUDA kernel is fp32, one head, one thread block per query row. It reaches 36% of SDPA at N=512 and falls to 6 to 8% at N=4096, flat at about 300 GFLOP/s.</p>
+
+									<h3>Where the CUDA kernel sits on the roofline</h3>
+									<p>I measured the ceilings on this card rather than trusting a spec sheet: 11.8 TFLOP/s for FP32, 39.2 TFLOP/s on the fp16 tensor cores, 223 GB/s from DRAM and 847 GB/s from the 32 MB L2, with the clock holding at 2.4 GHz.</p>
+									<p>Each of the N thread blocks streams all of K and V, so at N=4096 and D=128 the kernel moves 17.2 GB to do 8.6 GFLOP. That is 0.5 FLOP per byte. K and V together are only 4 MB, so they live in L2, and DRAM barely notices. Against L2 the roof at 0.5 FLOP per byte is 424 GFLOP/s, and the kernel does 303, which is 72% of it. The kernel is not slow at arithmetic. It uses 2.6% of the FP32 ceiling because it spends almost all of L2's bandwidth re-reading the same K and V once per query row.</p>
+									<p>That makes the next step unambiguous. A block that owns a tile of B query rows reads K and V once for all of them, which multiplies the intensity by B. At B=64 the kernel crosses the L2 ridge and tensor cores start to matter. That is the actual FlashAttention design, arrived at by measurement instead of by copying it. For comparison, the Triton kernel already does this and reaches 65% of the tensor-core ceiling, against 88% for cuDNN.</p>
+									<p>One caveat. That L2 traffic is modeled, not counted. Nsight Compute would count it directly, and it is next once the GPU counter permission survives a driver update.</p>
+									<div class="callout take"><span class="k">Takeaway</span><p>Every one of these was invisible until the code ran on the real thing: a race the emulator structurally could not see, a tolerance measuring the wrong precision, a tile that fit one GPU and not another, and a baseline that silently swapped itself out. Check which kernel your baseline actually runs, and when an error changes between identical runs, stop reading the math and start looking for two threads touching one address.</p></div>
+
+									<h3>Performance</h3>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
+											<tbody>
+												<tr><td>CUDA correctness, 24-case sweep</td><td>N&le;512 vs float64 on the GPU</td><td>24/24, worst 1.4e-06</td></tr>
+												<tr><td>Races, before / after fix</td><td><code>compute-sanitizer --tool racecheck</code></td><td>21 / 0 hazards</td></tr>
+												<tr><td>CUDA latency, N=4096 D=128</td><td><code>cudaEvent</code>, mean of 20 launches</td><td>28.3 ms (14.3 ms causal)</td></tr>
+												<tr><td>CUDA, percent of SDPA</td><td>same shape, fp32</td><td>36% at N=512, 6.0% at N=4096</td></tr>
+												<tr><td>Triton, percent of cuDNN</td><td><code>do_bench</code> median, fp16</td><td>74 to 131%</td></tr>
+												<tr><td>CUDA arithmetic intensity</td><td>bytes modeled from the access pattern</td><td>0.5 FLOP/byte (L2 bound)</td></tr>
+												<tr><td>CUDA share of L2 roof</td><td>303 GFLOP/s vs 424 at 0.5 FLOP/byte</td><td>72%</td></tr>
+												<tr><td>Triton / cuDNN share of tensor-core peak</td><td>vs a measured 39.2 TFLOP/s fp16 GEMM</td><td>65% / 88%</td></tr>
+												<tr><td>L2 traffic, occupancy, stall reasons</td><td>Nsight Compute</td><td><span class="tbd">pending counter access</span></td></tr>
+											</tbody>
+										</table>
+									</div>
+								</article>
+
+								<hr class="entry-sep" />
+
 								<!-- ENTRY: M6 -->
 								<article>
 									<span class="entry-date">2026-09-19</span><span class="tag wip">M6 &middot; in progress</span>
@@ -169,16 +247,16 @@ N=512   D=128  causal=0  max_err=3.102e-07  PASS</code></pre>
 									<div class="callout take"><span class="k">Takeaway</span><p>If your build target is on another machine, the distance between writing a bug and seeing it is the thing worth engineering away. Emulating just enough of the execution model to run the real kernel body cost an afternoon and now catches indexing and tail-tile bugs in seconds, locally, in CI, before the GPU ever sees the code.</p></div>
 
 									<h3>Performance</h3>
-									<p>Correctness is verified. Timings need the GPU box, which is the next thing I am doing.</p>
+									<p>Correctness is verified. <b>Update, 2026-09-25:</b> measured on an RTX 4070 Laptop GPU. The first real run also found a race this harness could not see; see the newest entry.</p>
 									<div class="table-wrapper">
 										<table class="perf-table">
 											<thead><tr><th>Metric</th><th>How it is measured</th><th>Value</th></tr></thead>
 											<tbody>
 												<tr><td>Correctness, N up to 512</td><td>CPU emulation vs a float64 reference</td><td>7/7 cases, max 6.6e-07</td></tr>
 												<tr><td>Score row storage per query</td><td>declared state in the kernel</td><td>0 (never materialized)</td></tr>
-												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td><span class="tbd">pending GPU</span></td></tr>
-												<tr><td>Percent of PyTorch SDPA</td><td><code>do_bench</code> median, fp16, matched shapes</td><td><span class="tbd">pending GPU</span></td></tr>
-												<tr><td>Occupancy, DRAM throughput</td><td>Nsight Compute</td><td><span class="tbd">pending GPU</span></td></tr>
+												<tr><td>Kernel latency (ms)</td><td><code>cudaEvent</code> timers around the launch</td><td>28.3 at N=4096, D=128</td></tr>
+												<tr><td>Percent of PyTorch SDPA</td><td>Triton <code>do_bench</code> median, fp16, vs cuDNN</td><td>74 to 131%</td></tr>
+												<tr><td>Occupancy, DRAM throughput</td><td>Nsight Compute</td><td><span class="tbd">pending counter access</span></td></tr>
 											</tbody>
 										</table>
 									</div>
