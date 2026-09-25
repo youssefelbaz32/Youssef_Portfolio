@@ -97,7 +97,7 @@ O = P &middot; V               // weighted blend of the value rows</pre>
 											<tr><td>M6</td><td>Host to FPGA link (AXI-Stream + DMA, PYNQ)</td><td>packaged as an AXI IP with per-phase cycle counters and a completion interrupt; caught a counter race in integration</td><td>In progress</td></tr>
 											<tr><td>M7</td><td>FPGA bring-up on ZUBoard 1CG (XCZU1CG)</td><td>synthesis, timing closure, on-hardware diff vs the fixed-point model</td><td>Next</td></tr>
 											<tr><td>M8</td><td>FlashAttention-lite, RTL (online softmax)</td><td><b>360 cy on one multiplier</b>, beating the naive core on four (515 cy); N&#178; buffers gone</td><td>Done</td></tr>
-											<tr><td>M8</td><td>FlashAttention-lite, CUDA and Triton</td><td>on an RTX 4070 Laptop GPU: Triton at <b>74 to 131% of cuDNN</b>; CUDA kernel L2-bound at 72% of its roofline; found and fixed a shared-memory race</td><td>Done</td></tr>
+											<tr><td>M8</td><td>FlashAttention-lite, CUDA and Triton</td><td>on an RTX 4070 Laptop GPU: Triton at <b>74 to 131% of cuDNN</b>; CUDA kernel <b>3.7x faster</b> after following Nsight (1.13 TFLOP/s); found and fixed a shared-memory race</td><td>Done</td></tr>
 										</tbody>
 									</table>
 								</div>
