@@ -76,6 +76,45 @@
 								<!-- Keep hr.entry-sep between entries. No em dashes.               -->
 								<!-- ============================================================= -->
 
+								<!-- ENTRY: M7 FPGA build -->
+								<article>
+									<span class="entry-date">2026-09-25</span><span class="tag wip">M7 &middot; FPGA, built</span>
+									<h2>Every build script I had never run, and the path that sets the clock</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>The FPGA scripts had been written without Vivado to run them on. The first real run broke in four places before it made a bitstream, and that bitstream missed 150 MHz. After the fixes, five builds went through, and the sweep says something the simulator never could: adding lanes makes the clock slower, because one combinational path grows with every lane.</p></div>
+
+									<h3>What broke on the first run</h3>
+									<p>The target is the ZUBoard 1CG, an XCZU1CG with 37,440 LUTs, 216 DSPs and a quad-core A53 running PYNQ. The block design is the usual shape: an AXI DMA streams Q, K and V out of DDR through the accelerator and back, and the A53 drives the control registers over AXI-Lite. Four things were wrong, and none of them were in the RTL.</p>
+									<p>The Zynq preset names are indexed, not named after the ports they make. <code>PSU__USE__M_AXI_GP0</code> turns on <code>M_AXI_HPM0_FPD</code>, and the low-power master I wanted is <code>GP2</code>. The DMA-to-DDR automation found no valid slave when pointed at the DMA master and worked when pointed at the PS slave, which is how Vivado's own generated scripts do it. <code>report_bd_address</code> is not a command. And the sweep script passed <code>-nojournal -nolog</code> after <code>-tclargs</code>, where Vivado hands them to the script as build parameters.</p>
+									<p>The driver had four more, found by reading it against the block design. It looked up IP names that did not exist. It used int16 buffers for a stream that carries one element per 32-bit beat, which would have moved half the data and hung. And it named the interrupt wrong. It also needed the <code>.hwh</code> file next to the bitstream, which the build was not copying.</p>
+
+									<h3>The sweep</h3>
+									<div class="image fit"><img src="images/m7_fmax.svg" alt="Line chart of fmax against BLK for N=D=16 on the ZUBoard: 111 MHz at BLK 2, 102 at BLK 4, 96 at BLK 8 and 65 at BLK 16, against a 100 MHz target. Critical-path logic levels grow from 25 to 50." /></div>
+									<p>BLK is the number of dot-product lanes. The simulator swept it for cycles and found the expected trade. Vivado adds the missing axis. At N=16, going from 2 to 16 lanes costs only 2,500 LUTs and 14 DSPs, which is nothing on this part. Clock is what it costs: fmax falls from 111 MHz to 65 MHz, and BLK 8 and 16 miss the 100 MHz target.</p>
+									<p>Every build has the same critical path. It starts at a lane's DSP output, goes through the max across all lanes, subtracts, looks up the exponential, and ends in the running sum. The max is written as a loop, so it synthesizes as a chain of BLK comparisons, and the exponential table is asynchronous, so it adds levels instead of a register. That is 25 logic levels at BLK 2 and 50 at BLK 16. About 55% of each path is routing.</p>
+
+									<h3>What it means for the design</h3>
+									<p>The sweep also shows a cycle problem I had not noticed. The fold step, which accumulates exp times V, does one multiply per cycle, so it costs N times DV cycles per row whatever BLK is. Extra lanes only speed up the dot products. So right now more lanes cost clock and buy few cycles. Two changes fix both: a tree for the max with a register after it, and a fold that does DV multiplies at once. I keep a running log of every timing path and every idea, with its status, in the repo.</p>
+
+									<div class="callout take"><span class="k">Takeaway</span><p>A cycle count is only half a latency. The other half is the clock, and it comes from the longest combinational path, which a cycle-accurate simulator cannot see. The design I thought scaled with lanes has a path that grows with lanes too.</p></div>
+
+									<h3>Performance</h3>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>N, BLK</th><th>LUT / FF / DSP</th><th>slack at 100 MHz</th><th>fmax</th></tr></thead>
+											<tbody>
+												<tr><td>4, 2</td><td>5,323 / 7,812 / 8</td><td>+1.97 ns</td><td>124 MHz</td></tr>
+												<tr><td>16, 2</td><td>11,159 / 24,505 / 8</td><td>+1.03 ns</td><td>111 MHz</td></tr>
+												<tr><td>16, 4</td><td>11,735 / 25,621 / 10</td><td>+0.18 ns</td><td>102 MHz</td></tr>
+												<tr><td>16, 8</td><td>12,771 / 27,830 / 14</td><td>-0.47 ns</td><td>96 MHz</td></tr>
+												<tr><td>16, 16</td><td>13,642 / 32,144 / 22</td><td>-5.38 ns</td><td>65 MHz</td></tr>
+											</tbody>
+										</table>
+									</div>
+									<p>Vivado 2024.1, whole design including the DMA and interconnect, D = DV = N. On-board latency and the hardware-versus-model diff come next, once the board is running PYNQ.</p>
+								</article>
+
+								<hr class="entry-sep" />
+
 								<!-- ENTRY: M8 tensor cores -->
 								<article>
 									<span class="entry-date">2026-09-25</span><span class="tag done">M8 &middot; tensor cores</span>
