@@ -76,6 +76,42 @@
 								<!-- Keep hr.entry-sep between entries. No em dashes.               -->
 								<!-- ============================================================= -->
 
+								<!-- ENTRY: M7 timing closure -->
+								<article>
+									<span class="entry-date">2026-09-26</span><span class="tag wip">M7 &middot; FPGA, 150 MHz</span>
+									<h2>Following the timing report to 150 MHz, then spending the DSPs</h2>
+									<div class="callout idea"><span class="k">Key idea</span><p>Four changes, each aimed at whatever the timing report named, took every N=16 build from 65 to 111 MHz up to 150 MHz or more. Then the other half of the last post's lesson: lanes were not buying cycles because the fold was serial. Folding a whole output row per cycle cut compute from 7,328 cycles to 1,520. Every step stayed bit-exact against the same integer spec.</p></div>
+
+									<div class="image fit"><img src="images/m7_closure.svg" alt="Line chart of fmax against BLK at N=D=16. Before pipelining: 111, 102, 96 and 65 MHz at BLK 2, 4, 8 and 16. After: 156, 150, 155 and 155 MHz, all at or above the 150 MHz target." /></div>
+
+									<h3>One path at a time</h3>
+									<p>The last post ended with one critical path: from a lane's dot-product DSP, through the max across lanes, into the exponential lookup and the running sum, 50 logic levels at 16 lanes. The max was a loop, so it synthesized as a chain. I made it a tree and registered the result, and gave the rebase lookup, <code>exp(m_old - m_new)</code>, a cycle of its own. That costs one cycle per block of keys and took 16 lanes from 65 to 129 MHz. It also made fmax flat across lane counts, which was the real problem.</p>
+									<p>With that path gone, the report named the next one: the final scale of each output, a 37 by 25-bit multiply by the row's reciprocal that spans two cascaded DSPs, then rounding and saturation, all in one cycle. I split it into three stages. The results land two cycles late, but by then the next row is already scoring, so it costs nothing. That brought 2, 4 and 8 lanes past 150 MHz. At 16 lanes the max tree was back on top, now because it read the DSP outputs directly, so it reads the registered scores instead, one more cycle per block.</p>
+									<p>One failure had nothing to do with the design. The first build of the output pipeline reported exactly the same slack as the build before it. Packaging had failed, and Vivado had quietly reused the old IP. Separately, builds were failing on Windows' 260-character path limit, because the checkout is deep and Vivado nests deeper. The scripts now take a short work directory. If two builds report identical numbers after a change, suspect the build before the change.</p>
+
+									<h3>Making lanes pay</h3>
+									<p>The fold step accumulates exp times V into the output row. It used one multiplier across all DV columns, so each key cost DV cycles no matter how many lanes computed its score. A new <code>FOLD_PAR</code> option gives it DV multipliers, one key per cycle, and does the same for the rebase. The products and the order of the sums are unchanged, so the output is the same bits, and the cycle model in the repo predicts the new counts to within 2%. It costs 45 more DSPs, which this part has plenty of.</p>
+
+									<div class="callout take"><span class="k">Takeaway</span><p>Read the timing report one path at a time. Each fix moves the limit somewhere else, and the next report tells you where. It took four rounds, and cost two cycles per block of keys, to get 2.4x the clock at 16 lanes. The larger win was on the cycle side, and the cycle model had pointed at it all along.</p></div>
+
+									<h3>Performance</h3>
+									<div class="table-wrapper">
+										<table class="perf-table">
+											<thead><tr><th>N=16, BLK, fold</th><th>LUT / DSP</th><th>fmax</th><th>compute</th></tr></thead>
+											<tbody>
+												<tr><td>4, serial (first build)</td><td>11,735 / 10</td><td>102 MHz</td><td>7,200 cy, 72.0 us</td></tr>
+												<tr><td>4, serial</td><td>11,662 / 10</td><td>150 MHz</td><td>7,328 cy, 49.5 us</td></tr>
+												<tr><td>16, serial</td><td>13,216 / 22</td><td>155 MHz</td><td>5,600 cy, 37.8 us</td></tr>
+												<tr><td>4, parallel</td><td>12,133 / 55</td><td>156 MHz</td><td>2,528 cy, 17.1 us</td></tr>
+												<tr><td>16, parallel</td><td>13,607 / 67</td><td>151 MHz</td><td>1,520 cy, 10.3 us</td></tr>
+											</tbody>
+										</table>
+									</div>
+									<p>Vivado 2024.1 on the XCZU1CG, whole design including the DMA. Compute time uses the real 148.1 MHz clock, and the first build uses its own 100 MHz clock. Loading Q, K and V adds at least 768 cycles at N=16, which is now a third of the fastest run, so packing two values per stream beat is next. Then running it on the board.</p>
+								</article>
+
+								<hr class="entry-sep" />
+
 								<!-- ENTRY: M7 FPGA build -->
 								<article>
 									<span class="entry-date">2026-09-25</span><span class="tag wip">M7 &middot; FPGA, built</span>
