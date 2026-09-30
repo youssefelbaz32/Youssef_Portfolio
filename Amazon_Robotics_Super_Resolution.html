@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Amazon Robotics Super-Resolution | Youssef Elhagrasy</title>
+  <meta name="description" content="Amazon Robotics-sponsored capstone: beam-shifting super-resolution for barcode scanning." />
+  <meta property="og:title" content="Amazon Robotics Super-Resolution | Youssef Elhagrasy" />
+  <meta property="og:image" content="images/headshot.jpg" />
+  <link rel="icon" type="image/jpeg" href="images/ye-initials.jpg" />
+  <script>try{var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/site.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="index.html">Youssef Elhagrasy</a>
+      <button class="icon-btn menu-toggle" aria-label="Menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <nav class="site-nav">
+        <a href="index.html">about</a>
+        <a href="index.html#publications">publications</a>
+        <a href="projects.html" class="active">projects</a>
+        <a href="Blog.html">blog</a>
+        <a href="cv.html">cv</a>
+        <button class="icon-btn theme-toggle" aria-label="Toggle dark mode"><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+
+      <a class="back-link" href="projects.html">&larr; All projects</a>
+      <section class="post">
+        <header class="major">
+          <h1>Amazon Robotics: Super-Resolution Barcode Scanning</h1>
+          <p>ENPH&nbsp;459 capstone, sponsored by Amazon Robotics (2025&ndash;2026), with Benedikt Howard, Josh Bermel and Shuyu van Kerkwijk. Warehouse robots lose time every time a barcode fails to decode, and replacing cameras across a fleet is expensive. We tested whether an add-on beam-shifting actuator plus multi-frame reconstruction could get more resolution out of the cameras already deployed.</p>
+        </header>
+
+        <div class="stats">
+          <div class="stat"><div class="v">0.01&ndash;0.02 px</div><div class="l">subpixel shift repeatability</div></div>
+          <div class="stat"><div class="v">&lt;0.05 px</div><div class="l">cross-axis crosstalk</div></div>
+          <div class="stat"><div class="v">6 &rarr; 4 mil</div><div class="l">finest barcode at 100% decode (Bayer)</div></div>
+          <div class="stat"><div class="v">3.1&times;</div><div class="l">jitter increase under vibration</div></div>
+        </div>
+
+        <h2>The idea</h2>
+        <p>An Optotune XPR-20 tilts a thin glass window between the lens and the sensor, shifting the image by a fraction of a pixel. Four frames at half-pixel offsets sample the scene on a grid twice as dense in each direction, which in principle doubles the Nyquist limit. Because the shifts are commanded rather than random, the reconstruction does not have to estimate them first.</p>
+
+        <h2>The rig</h2>
+        <figure class="white"><img src="images/amazon_sr/system.jpg" alt="Optical bench: barcode sample on a Zaber translation stage, LED light, camera assembly with lens, Optotune actuator and sensor, controller and PC" loading="lazy" /><figcaption>Daheng MERCURY2 cameras (Sony IMX265, monochrome and Bayer), a Kowa 35&nbsp;mm lens, the XPR-20 and its controller, with the target on a motorized stage.</figcaption></figure>
+        <p>Two details made the data trustworthy. The actuator controller raises a GPIO trigger once the window has settled (about 1.1&nbsp;ms), which starts the camera exposure, so no frame is captured mid-move. And focus is found automatically by sweeping the stage and maximizing a sharpness metric: variance of the Laplacian for printed targets, peak intensity for a 5&nbsp;&micro;m pinhole.</p>
+
+        <h2>Characterizing the system first</h2>
+        <p>Before any super-resolution, we measured what the optics could actually deliver. Imaging a backlit pinhole gave the point spread function, and its Fourier transform gave the MTF: contrast falls to 50% at 66&nbsp;cycles/mm and to 10% at 139&nbsp;cycles/mm, right at the monochrome sensor's Nyquist limit of 144.</p>
+        <div class="row">
+          <figure class="white"><img src="images/amazon_sr/mtf.jpg" alt="Radial MTF curve with MTF50 at 66 and MTF10 at 140 cycles per millimetre" loading="lazy" /><figcaption>System MTF from the measured PSF</figcaption></figure>
+          <figure class="white"><img src="images/amazon_sr/shift_calibration.jpg" alt="Beam-shift calibration: measured pixel shift versus commanded tilt angle for both axes, linear with negligible crosstalk" loading="lazy" /><figcaption>Shift vs. commanded tilt: linear, with negligible crosstalk</figcaption></figure>
+        </div>
+        <p>Fitting a 2D Gaussian to the pinhole at each commanded tilt calibrated the shifts: highly linear, repeatable to 0.01&ndash;0.02&nbsp;px, and under 0.05&nbsp;px of cross-axis leakage. Under controlled conditions the actuator does exactly what super-resolution needs.</p>
+
+        <h2>Reconstruction</h2>
+        <div class="row">
+          <figure class="white"><img src="images/amazon_sr/pipeline.jpg" alt="Reconstruction pipeline: shift and add, then iterative backprojection through a forward model" loading="lazy" /><figcaption>Shift-and-Add, refined by Iterative Backprojection</figcaption></figure>
+          <div>
+            <p><strong>Shift-and-Add</strong> upsamples each frame, places it on the fine grid at its calibrated offset, and averages. <strong>Iterative Backprojection</strong> then models image formation (blur, shift, downsample), simulates what the camera should have seen, and pushes the error back onto the high-resolution estimate for 80 iterations.</p>
+            <p>A Gaussian PSF kernel worked better than the measured one, because noise in the pinhole measurement is amplified by the deconvolution.</p>
+          </div>
+        </div>
+
+        <h2>Results: it depends on the sensor</h2>
+        <p>On the <strong>monochrome</strong> camera, reconstruction added nothing: edge profiles, MTFs and barcode decoding were identical with and without it. The MTF measurement explains why. The lens has already removed nearly all contrast above the sensor's Nyquist limit, so there is nothing left to recover.</p>
+        <p>On the <strong>Bayer</strong> camera, each colour channel samples at half density (72&nbsp;cycles/mm), well below the optical cutoff. There, SAA+IBP resolved bars that the single frame blurred to grey, and moved the finest barcode decoded 100% of the time from 6&nbsp;mil to 4&nbsp;mil, matching the monochrome sensor. Decoding used ZXing-C++ with 25 jittered crops per barcode to get a confidence rather than a single pass/fail.</p>
+        <div class="row">
+          <figure class="white"><img src="images/amazon_sr/bayer_compare.jpg" alt="Resolution chart on the Bayer red channel: native upscale blurs fine bars, SAA plus IBP resolves them" loading="lazy" /><figcaption>Bayer red channel: native upscale (top) vs. SAA+IBP (bottom)</figcaption></figure>
+          <figure class="white"><img src="images/amazon_sr/decode_bayer.jpg" alt="Barcode decode rate versus pitch on the Bayer camera for raw, SAA and IBP" loading="lazy" /><figcaption>Decode rate vs. barcode pitch, Bayer camera</figcaption></figure>
+        </div>
+
+        <h2>Why it isn't deployable (yet)</h2>
+        <ul>
+          <li><strong>Focus range.</strong> The actuator housing adds about 10&nbsp;mm between lens and sensor, acting like an extension tube: usable depth of field collapsed to 7.7&nbsp;mm at roughly 185&nbsp;mm working distance.</li>
+          <li><strong>Vibration.</strong> Tapping the optical table raised frame-to-frame jitter 3.1&times;, from 0.15 to 0.47&nbsp;px, about the size of the intended shifts. Once shifts must be estimated from the images anyway, a deterministic beam shifter offers no advantage over the random subpixel motion vibration already provides.</li>
+          <li><strong>Optics.</strong> Industrial lenses are usually matched to the sensor's Nyquist limit, so most existing cameras have the same lack of headroom as the monochrome one.</li>
+        </ul>
+        <p>Our recommendation to Amazon Robotics was not to deploy this configuration, and to pursue super-resolution only with purpose-built optics: a lens with contrast above Nyquist, integrated beam shifting that keeps the correct flange distance, a stiffer mount, and GPU or learned reconstruction to bring IBP from tens of seconds per frame toward real time.</p>
+        <p><strong>Stack:</strong> Python, OpenCV, NumPy/SciPy, ZXing-C++, Daheng camera SDK, Optotune XPR-20 and ICC-4C-2000, Zaber stages.</p>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <span>&copy; <span id="year">2026</span> Youssef Elhagrasy</span>
+      <span><a href="mailto:youssefelbaz32@gmail.com">Email</a> &middot; <a href="https://www.linkedin.com/in/youssef-elhagrasy/" target="_blank" rel="noopener">LinkedIn</a> &middot; <a href="https://github.com/youssefelbaz32" target="_blank" rel="noopener">GitHub</a></span>
+    </div>
+  </footer>
+  <script src="assets/js/site.js"></script>
+</body>
+</html>

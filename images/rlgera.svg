@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Monte Carlo tree search over stress actions, raising characterization yield from 20.4 to 54.2 percent">
+  <rect width="640" height="360" fill="#0b0f1a"/>
+  <g stroke="#3d6ea5" stroke-width="2" fill="none">
+    <path d="M160 70 L90 150 M160 70 L160 150 M160 70 L230 150 M90 150 L60 230 M90 150 L115 230 M230 150 L205 230 M230 150 L260 230 M260 230 L240 300 M260 230 L285 300"/>
+  </g>
+  <g stroke="#7bd0ff" stroke-width="3" fill="none"><path d="M160 70 L230 150 L260 230 L285 300"/></g>
+  <g fill="#182642" stroke="#3d6ea5" stroke-width="2">
+    <circle cx="160" cy="70" r="16"/><circle cx="90" cy="150" r="13"/><circle cx="160" cy="150" r="13"/><circle cx="230" cy="150" r="13"/>
+    <circle cx="60" cy="230" r="11"/><circle cx="115" cy="230" r="11"/><circle cx="205" cy="230" r="11"/><circle cx="260" cy="230" r="11"/>
+    <circle cx="240" cy="300" r="9"/>
+  </g>
+  <circle cx="285" cy="300" r="10" fill="#7bd0ff"/>
+  <g font-family="ui-monospace,Menlo,monospace" fill="#8fa3c0" font-size="13">
+    <text x="178" y="60">belief (EKF)</text>
+    <text x="300" y="305">stress policy</text>
+    <text x="30" y="340">V &#183; J &#183; T &#183; dwell  across BTI / EM / TDDB</text>
+  </g>
+  <g font-family="ui-monospace,Menlo,monospace">
+    <text x="400" y="110" fill="#8fa3c0" font-size="14">characterization yield</text>
+    <rect x="400" y="130" width="200" height="34" rx="4" fill="#141b2d" stroke="#2e3b57"/>
+    <rect x="400" y="130" width="41" height="34" rx="4" fill="#5a6a86"/>
+    <text x="450" y="153" fill="#e6edf6" font-size="15">20.4%  random</text>
+    <rect x="400" y="180" width="200" height="34" rx="4" fill="#141b2d" stroke="#2e3b57"/>
+    <rect x="400" y="180" width="108" height="34" rx="4" fill="#7bd0ff"/>
+    <text x="516" y="203" fill="#e6edf6" font-size="15">54.2%</text>
+    <text x="400" y="240" fill="#8fa3c0" font-size="13">MCTS + EKF, 5,000 iterations</text>
+  </g>
+</svg>
