@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 640" role="img" aria-label="Where the pipeline registers were added. Scores: the first build went from the lane DSP through a chain of max compares, the exp ROM and the rebase multiply in one cycle. After: scores are registered (s_blk), the max is a tree registered in a new MAXR state (m_new_r), and the exp lookup is registered in a new CORR state (corr_r), costing two cycles per block of keys. Output scaling: the 37 by 26-bit reciprocal multiply is split into operand, product and round-saturate-write stages, costing no cycles.">
+  <style>
+    .t{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:600;fill:#dce4ee}
+    .s{font-family:system-ui,sans-serif;font-size:11px;fill:#8493a4}
+    .a{font-family:system-ui,sans-serif;font-size:12px;fill:#8493a4}
+    .h{font-family:system-ui,sans-serif;font-size:12px;font-weight:600;fill:#dce4ee}
+    .l{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;fill:#dce4ee}
+    .m{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;fill:#8493a4}
+    .bg{fill:#141b24;stroke:#33404f;stroke-width:1.5}
+    .blk{fill:#1b2430;stroke:#3a4a5c;stroke-width:1.2}
+    .dsp{fill:#16263d;stroke:#3987e5;stroke-width:1.4}
+    .reg{fill:#0d9488;stroke:#5eead4;stroke-width:1}
+    .old{fill:#2a1f14;stroke:#d97706;stroke-width:1;stroke-dasharray:4 3}
+    .w{stroke:#8493a4;stroke-width:1.5;fill:none}
+    .crit{stroke:#d97706;stroke-width:2.5;fill:none}
+  </style>
+  <rect class="bg" x="4" y="4" width="1112" height="632" rx="12"/>
+  <text class="t" x="32" y="42">Where the pipeline registers went</text>
+  <text class="s" x="32" y="62">flash_top.sv, N = D = 16. Orange: the critical path in the first build. Teal: registers added in M7, named as in the RTL.</text>
+  <text class="h" x="32" y="96">Score to running sum: first build, one SCORE_WAIT cycle</text>
+  <rect class="dsp" x="32" y="122" width="150" height="44" rx="6"/>
+  <text class="l" x="107.0" y="141.0" text-anchor="middle">lane dot4</text>
+  <text class="m" x="107.0" y="156.0" text-anchor="middle">DSP accumulator</text>
+  <line class="crit" x1="182" y1="144.0" x2="216" y2="144.0"/>
+  <path d="M215,140.0 L222,144.0 L215,148.0 z" fill="#d97706"/>
+  <rect class="old" x="222" y="122" width="190" height="44" rx="6"/>
+  <text class="l" x="317.0" y="141.0" text-anchor="middle">max over BLK lanes</text>
+  <text class="m" x="317.0" y="156.0" text-anchor="middle">linear chain, BLK deep</text>
+  <line class="crit" x1="412" y1="144.0" x2="446" y2="144.0"/>
+  <path d="M445,140.0 L452,144.0 L445,148.0 z" fill="#d97706"/>
+  <rect class="old" x="452" y="122" width="150" height="44" rx="6"/>
+  <text class="l" x="527.0" y="141.0" text-anchor="middle">m_run - m_new</text>
+  <text class="m" x="527.0" y="156.0" text-anchor="middle">subtract</text>
+  <line class="crit" x1="602" y1="144.0" x2="636" y2="144.0"/>
+  <path d="M635,140.0 L642,144.0 L635,148.0 z" fill="#d97706"/>
+  <rect class="old" x="642" y="122" width="150" height="44" rx="6"/>
+  <text class="l" x="717.0" y="141.0" text-anchor="middle">exp ROM</text>
+  <text class="m" x="717.0" y="156.0" text-anchor="middle">async LUT</text>
+  <line class="crit" x1="792" y1="144.0" x2="826" y2="144.0"/>
+  <path d="M825,140.0 L832,144.0 L825,148.0 z" fill="#d97706"/>
+  <rect class="old" x="832" y="122" width="170" height="44" rx="6"/>
+  <text class="l" x="917.0" y="141.0" text-anchor="middle">l_run * corr</text>
+  <text class="m" x="917.0" y="156.0" text-anchor="middle">rebase</text>
+  <text class="a" x="32" y="196" fill="#d97706">One combinational cone: 25 logic levels at BLK = 2, 50 at BLK = 16. fmax 111 to 65 MHz.</text>
+  <text class="h" x="32" y="226">Score to running sum: after M7, SCORE_WAIT, MAXR, CORR, REBASE</text>
+  <rect class="dsp" x="32" y="262" width="130" height="44" rx="6"/>
+  <text class="l" x="97.0" y="281.0" text-anchor="middle">lane dot4</text>
+  <text class="m" x="97.0" y="296.0" text-anchor="middle">DSP accumulator</text>
+  <line class="w" x1="162" y1="284.0" x2="190" y2="284.0"/>
+  <path d="M189,280.0 L196,284.0 L189,288.0 z" fill="#8493a4"/>
+  <rect class="reg" x="196" y="256" width="12" height="56" rx="2"/>
+  <text class="m" x="202" y="248" text-anchor="middle" fill="#5eead4">s_blk</text>
+  <text class="m" x="202" y="328" text-anchor="middle" fill="#5eead4">T1</text>
+  <line class="w" x1="208" y1="284.0" x2="236" y2="284.0"/>
+  <path d="M235,280.0 L242,284.0 L235,288.0 z" fill="#8493a4"/>
+  <rect class="blk" x="242" y="262" width="170" height="44" rx="6"/>
+  <text class="l" x="327.0" y="281.0" text-anchor="middle">max tree</text>
+  <text class="m" x="327.0" y="296.0" text-anchor="middle">log2(BLK)+1 compares</text>
+  <line class="w" x1="412" y1="284.0" x2="440" y2="284.0"/>
+  <path d="M439,280.0 L446,284.0 L439,288.0 z" fill="#8493a4"/>
+  <rect class="reg" x="446" y="256" width="12" height="56" rx="2"/>
+  <text class="m" x="452" y="248" text-anchor="middle" fill="#5eead4">m_new_r</text>
+  <text class="m" x="452" y="328" text-anchor="middle" fill="#5eead4">MAXR +1 cy</text>
+  <line class="w" x1="458" y1="284.0" x2="486" y2="284.0"/>
+  <path d="M485,280.0 L492,284.0 L485,288.0 z" fill="#8493a4"/>
+  <rect class="blk" x="492" y="262" width="190" height="44" rx="6"/>
+  <text class="l" x="587.0" y="281.0" text-anchor="middle">subtract, exp ROM</text>
+  <text class="m" x="587.0" y="296.0" text-anchor="middle">shared with EXPF</text>
+  <line class="w" x1="682" y1="284.0" x2="710" y2="284.0"/>
+  <path d="M709,280.0 L716,284.0 L709,288.0 z" fill="#8493a4"/>
+  <rect class="reg" x="716" y="256" width="12" height="56" rx="2"/>
+  <text class="m" x="722" y="248" text-anchor="middle" fill="#5eead4">corr_r</text>
+  <text class="m" x="722" y="328" text-anchor="middle" fill="#5eead4">CORR +1 cy</text>
+  <line class="w" x1="728" y1="284.0" x2="756" y2="284.0"/>
+  <path d="M755,280.0 L762,284.0 L755,288.0 z" fill="#8493a4"/>
+  <rect class="dsp" x="762" y="262" width="240" height="44" rx="6"/>
+  <text class="l" x="882.0" y="281.0" text-anchor="middle">rebase multiplies</text>
+  <text class="m" x="882.0" y="296.0" text-anchor="middle">acc * corr, l_run * corr</text>
+  <text class="a" x="32" y="346">Two new states, one cycle each, per block of keys. T1 feeds the tree from registered scores; T3 splits max from exp. 14 levels at BLK = 16.</text>
+  <line x1="32" y1="378" x2="1088" y2="378" stroke="#26313d"/>
+  <text class="h" x="32" y="414">Output scaling, O = acc * (2^24 / l): first build, one SCALE_OUT cycle</text>
+  <rect class="blk" x="32" y="436" width="150" height="44" rx="6"/>
+  <text class="l" x="107.0" y="455.0" text-anchor="middle">acc[c_cnt]</text>
+  <text class="m" x="107.0" y="470.0" text-anchor="middle">37-bit</text>
+  <line class="crit" x1="182" y1="458.0" x2="216" y2="458.0"/>
+  <path d="M215,454.0 L222,458.0 L215,462.0 z" fill="#d97706"/>
+  <rect class="old" x="222" y="436" width="260" height="44" rx="6"/>
+  <text class="l" x="352.0" y="455.0" text-anchor="middle">37 x 26-bit multiply</text>
+  <text class="m" x="352.0" y="470.0" text-anchor="middle">two cascaded DSPs</text>
+  <line class="crit" x1="482" y1="458.0" x2="516" y2="458.0"/>
+  <path d="M515,454.0 L522,458.0 L515,462.0 z" fill="#d97706"/>
+  <rect class="old" x="522" y="436" width="200" height="44" rx="6"/>
+  <text class="l" x="622.0" y="455.0" text-anchor="middle">round, saturate</text>
+  <text class="m" x="622.0" y="470.0" text-anchor="middle">to Q8.8</text>
+  <line class="crit" x1="722" y1="458.0" x2="756" y2="458.0"/>
+  <path d="M755,454.0 L762,458.0 L755,462.0 z" fill="#d97706"/>
+  <rect class="blk" x="762" y="436" width="130" height="44" rx="6"/>
+  <text class="l" x="827.0" y="455.0" text-anchor="middle">o_mem</text>
+  <text class="m" x="827.0" y="470.0" text-anchor="middle">write</text>
+  <text class="h" x="32" y="524">Output scaling, after T8: three stages</text>
+  <rect class="blk" x="32" y="556" width="150" height="44" rx="6"/>
+  <text class="l" x="107.0" y="575.0" text-anchor="middle">acc[c_cnt]</text>
+  <text class="m" x="107.0" y="590.0" text-anchor="middle">37-bit</text>
+  <line class="w" x1="182" y1="578.0" x2="210" y2="578.0"/>
+  <path d="M209,574.0 L216,578.0 L209,582.0 z" fill="#8493a4"/>
+  <rect class="reg" x="216" y="550" width="12" height="56" rx="2"/>
+  <text class="m" x="222" y="542" text-anchor="middle" fill="#5eead4">so_acc</text>
+  <line class="w" x1="228" y1="578.0" x2="256" y2="578.0"/>
+  <path d="M255,574.0 L262,578.0 L255,582.0 z" fill="#8493a4"/>
+  <rect class="dsp" x="262" y="556" width="260" height="44" rx="6"/>
+  <text class="l" x="392.0" y="575.0" text-anchor="middle">37 x 26-bit multiply</text>
+  <text class="m" x="392.0" y="590.0" text-anchor="middle">two cascaded DSPs</text>
+  <line class="w" x1="522" y1="578.0" x2="550" y2="578.0"/>
+  <path d="M549,574.0 L556,578.0 L549,582.0 z" fill="#8493a4"/>
+  <rect class="reg" x="556" y="550" width="12" height="56" rx="2"/>
+  <text class="m" x="562" y="542" text-anchor="middle" fill="#5eead4">so_prod</text>
+  <line class="w" x1="568" y1="578.0" x2="596" y2="578.0"/>
+  <path d="M595,574.0 L602,578.0 L595,582.0 z" fill="#8493a4"/>
+  <rect class="blk" x="602" y="556" width="200" height="44" rx="6"/>
+  <text class="l" x="702.0" y="575.0" text-anchor="middle">round, saturate</text>
+  <text class="m" x="702.0" y="590.0" text-anchor="middle">to Q8.8</text>
+  <line class="w" x1="802" y1="578.0" x2="836" y2="578.0"/>
+  <path d="M835,574.0 L842,578.0 L835,582.0 z" fill="#8493a4"/>
+  <rect class="blk" x="842" y="556" width="130" height="44" rx="6"/>
+  <text class="l" x="907.0" y="575.0" text-anchor="middle">o_mem</text>
+  <text class="m" x="907.0" y="590.0" text-anchor="middle">write, 2 cy late</text>
+  <text class="a" x="990" y="574" fill="#5eead4">0 cycles:</text>
+  <text class="a" x="990" y="590" fill="#5eead4">next row is</text>
+  <text class="a" x="990" y="606" fill="#5eead4">already scoring</text>
+</svg>

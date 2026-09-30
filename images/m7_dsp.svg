@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 460" role="img" aria-label="Stacked bars of DSP slices per build. BLK 4 serial: 10 (4 lanes, 2 acc rebase, 1 fold, 1 l rebase, 2 output). BLK 16 serial: 22. BLK 4 FOLD_PAR: 55 (4 lanes, 32 acc rebase, 16 fold, 1, 2). BLK 16 FOLD_PAR: 67. FOLD_PAR adds 45 DSPs, 30 of them for the 37-bit rebase multiplies.">
+  <style>
+    .t{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:600;fill:#dce4ee}
+    .s{font-family:system-ui,sans-serif;font-size:11px;fill:#8493a4}
+    .a{font-family:system-ui,sans-serif;font-size:12px;fill:#8493a4}
+    .h{font-family:system-ui,sans-serif;font-size:12px;font-weight:600;fill:#dce4ee}
+    .l{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;fill:#dce4ee}
+    .m{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;fill:#8493a4}
+    .bg{fill:#141b24;stroke:#33404f;stroke-width:1.5}
+    .blk{fill:#1b2430;stroke:#3a4a5c;stroke-width:1.2}
+    .dsp{fill:#16263d;stroke:#3987e5;stroke-width:1.4}
+    .reg{fill:#0d9488;stroke:#5eead4;stroke-width:1}
+    .old{fill:#2a1f14;stroke:#d97706;stroke-width:1;stroke-dasharray:4 3}
+    .w{stroke:#8493a4;stroke-width:1.5;fill:none}
+    .crit{stroke:#d97706;stroke-width:2.5;fill:none}
+  </style>
+  <rect class="bg" x="4" y="4" width="1112" height="452" rx="12"/>
+  <text class="t" x="32" y="42">Where the DSPs went</text>
+  <text class="s" x="32" y="62">DSP48E2 slices per build, N = D = DV = 16, whole design. The part has 216. Split derived from operand widths; totals match every Vivado report.</text>
+  <line class="grid" x1="240.0" y1="90" x2="240.0" y2="330" stroke="#26313d"/>
+  <text class="m" x="240.0" y="348" text-anchor="middle">0</text>
+  <line class="grid" x1="348.6" y1="90" x2="348.6" y2="330" stroke="#26313d"/>
+  <text class="m" x="348.6" y="348" text-anchor="middle">10</text>
+  <line class="grid" x1="457.1" y1="90" x2="457.1" y2="330" stroke="#26313d"/>
+  <text class="m" x="457.1" y="348" text-anchor="middle">20</text>
+  <line class="grid" x1="565.7" y1="90" x2="565.7" y2="330" stroke="#26313d"/>
+  <text class="m" x="565.7" y="348" text-anchor="middle">30</text>
+  <line class="grid" x1="674.3" y1="90" x2="674.3" y2="330" stroke="#26313d"/>
+  <text class="m" x="674.3" y="348" text-anchor="middle">40</text>
+  <line class="grid" x1="782.9" y1="90" x2="782.9" y2="330" stroke="#26313d"/>
+  <text class="m" x="782.9" y="348" text-anchor="middle">50</text>
+  <line class="grid" x1="891.4" y1="90" x2="891.4" y2="330" stroke="#26313d"/>
+  <text class="m" x="891.4" y="348" text-anchor="middle">60</text>
+  <line class="grid" x1="1000.0" y1="90" x2="1000.0" y2="330" stroke="#26313d"/>
+  <text class="m" x="1000.0" y="348" text-anchor="middle">70</text>
+  <text class="l" x="226" y="123" text-anchor="end">BLK 4, serial</text>
+  <rect x="240.0" y="100" width="43.4" height="34" fill="#3987e5"/>
+  <text class="m" x="261.7" y="121" text-anchor="middle" fill="#ffffff" font-weight="600">4</text>
+  <rect x="283.4" y="100" width="21.7" height="34" fill="#d97706"/>
+  <rect x="305.1" y="100" width="10.9" height="34" fill="#0d9488"/>
+  <rect x="316.0" y="100" width="10.9" height="34" fill="#a78bfa"/>
+  <rect x="326.9" y="100" width="21.7" height="34" fill="#8493a4"/>
+  <text class="l" x="358.6" y="122">10</text>
+  <text class="l" x="226" y="179" text-anchor="end">BLK 16, serial</text>
+  <rect x="240.0" y="156" width="173.7" height="34" fill="#3987e5"/>
+  <text class="m" x="326.9" y="177" text-anchor="middle" fill="#ffffff" font-weight="600">16</text>
+  <rect x="413.7" y="156" width="21.7" height="34" fill="#d97706"/>
+  <rect x="435.4" y="156" width="10.9" height="34" fill="#0d9488"/>
+  <rect x="446.3" y="156" width="10.9" height="34" fill="#a78bfa"/>
+  <rect x="457.1" y="156" width="21.7" height="34" fill="#8493a4"/>
+  <text class="l" x="488.9" y="178">22</text>
+  <text class="l" x="226" y="235" text-anchor="end">BLK 4, FOLD_PAR</text>
+  <rect x="240.0" y="212" width="43.4" height="34" fill="#3987e5"/>
+  <text class="m" x="261.7" y="233" text-anchor="middle" fill="#ffffff" font-weight="600">4</text>
+  <rect x="283.4" y="212" width="347.4" height="34" fill="#d97706"/>
+  <text class="m" x="457.1" y="233" text-anchor="middle" fill="#ffffff" font-weight="600">32</text>
+  <rect x="630.9" y="212" width="173.7" height="34" fill="#0d9488"/>
+  <text class="m" x="717.7" y="233" text-anchor="middle" fill="#ffffff" font-weight="600">16</text>
+  <rect x="804.6" y="212" width="10.9" height="34" fill="#a78bfa"/>
+  <rect x="815.4" y="212" width="21.7" height="34" fill="#8493a4"/>
+  <text class="l" x="847.1" y="234">55</text>
+  <text class="l" x="226" y="291" text-anchor="end">BLK 16, FOLD_PAR</text>
+  <rect x="240.0" y="268" width="173.7" height="34" fill="#3987e5"/>
+  <text class="m" x="326.9" y="289" text-anchor="middle" fill="#ffffff" font-weight="600">16</text>
+  <rect x="413.7" y="268" width="347.4" height="34" fill="#d97706"/>
+  <text class="m" x="587.4" y="289" text-anchor="middle" fill="#ffffff" font-weight="600">32</text>
+  <rect x="761.1" y="268" width="173.7" height="34" fill="#0d9488"/>
+  <text class="m" x="848.0" y="289" text-anchor="middle" fill="#ffffff" font-weight="600">16</text>
+  <rect x="934.9" y="268" width="10.9" height="34" fill="#a78bfa"/>
+  <rect x="945.7" y="268" width="21.7" height="34" fill="#8493a4"/>
+  <text class="l" x="977.4" y="290">67</text>
+  <rect x="32" y="371" width="14" height="14" rx="2" fill="#3987e5"/>
+  <text class="a" x="54" y="382">dot4 lanes (1 each)</text>
+  <rect x="392" y="371" width="14" height="14" rx="2" fill="#d97706"/>
+  <text class="a" x="414" y="382">acc * corr rebase (2 each, 37 x 17)</text>
+  <rect x="752" y="371" width="14" height="14" rx="2" fill="#0d9488"/>
+  <text class="a" x="774" y="382">exp * V fold (1 each, 17 x 17)</text>
+  <rect x="32" y="397" width="14" height="14" rx="2" fill="#a78bfa"/>
+  <text class="a" x="54" y="408">l_run * corr rebase (1)</text>
+  <rect x="392" y="397" width="14" height="14" rx="2" fill="#8493a4"/>
+  <text class="a" x="414" y="408">output scale (2, 37 x 26)</text>
+</svg>
