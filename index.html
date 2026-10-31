@@ -94,7 +94,7 @@
         <li><span class="date">Sep 2026</span><span>Attention Accelerator milestone 8: the tensor-core CUDA kernel is 12.7&times; faster than where it started. <a href="Blog.html">Read the blog</a>.</span></li>
         <li><span class="date">Aug 2026</span><span>Wrapped up my second Microsoft internship, on the Cobalt RTL design team (PCIe/CXL bridge).</span></li>
         <li><span class="date">2026</span><span>First-author paper on adaptive reliability qualification accepted to <em>IEEE Transactions on Reliability</em>.</span></li>
-        <li><span class="date">2026</span><span>Submitted first-author work on combined pruning and activation thresholds to MLSys 2027.</span></li>
+        <li><span class="date">2026</span><span>Submitted first-author work on where skipped multiply-accumulates pay off to MLSys 2027.</span></li>
         <li><span class="date">Dec 2024</span><span>MXene wafer-scale transfer paper published in <em>Advanced Materials</em>.</span></li>
       </ul>
 
@@ -109,13 +109,13 @@
             <a class="pill-link" href="https://github.com/youssefelbaz32/RLGera" target="_blank" rel="noopener">Code</a></div>
         </li>
         <li class="pub">
-          <span class="pub-title">Combined Per-Kernel Weight Pruning and Activation Thresholds for Energy-Efficient DNN Inference</span>
-          <div class="pub-authors"><span class="me">Y.&nbsp;A.&nbsp;Elhagrasy</span>, Y.&nbsp;Abulnaga, D.&nbsp;H.&nbsp;An, B.&nbsp;Quinton</div>
+          <span class="pub-title">First-author paper on where skipped multiply-accumulates pay off, from the processing element to LLM decoding (title withheld during double-blind review)</span>
+          <div class="pub-authors"><span class="me">Y.&nbsp;A.&nbsp;Elhagrasy</span>, <em>et al.</em></div>
           <div class="pub-meta"><span class="pub-venue">Submitted to MLSys, 2027</span><span class="badge review">Under review</span></div>
         </li>
         <li class="pub">
           <span class="pub-title">Wear-out Sensor SoC Peripheral for Continuous Semiconductor Reliability Monitoring, Lifespan Prediction, and Failure Risk Management</span>
-          <div class="pub-authors">R.&nbsp;Guerrero, <span class="me">Y.&nbsp;A.&nbsp;Elhagrasy</span>, P.&nbsp;Moheban, I.&nbsp;Hill, A.&nbsp;Ivanov</div>
+          <div class="pub-authors">I.&nbsp;Hill, R.&nbsp;V&aacute;zquez Guerrero, <span class="me">Y.&nbsp;A.&nbsp;Elhagrasy</span>, R.&nbsp;Jalilian, P.&nbsp;Moheban, M.&nbsp;Taylor, A.&nbsp;Ivanov</div>
           <div class="pub-meta"><span class="pub-venue">IEEE Transactions on Device and Materials Reliability, 2026</span><span class="badge review">Under review</span></div>
         </li>
         <li class="pub">
@@ -132,7 +132,7 @@
         <div class="research-item">
           <h3>Energy-efficient DNN inference</h3>
           <div class="where">UBC &middot; with Prof. Brad Quinton &middot; Jan 2026&ndash;present</div>
-          <p>A two-stage PyTorch framework that learns per-kernel binary masks and activation thresholds to skip multiply-accumulates that do not change the answer. On VGG16-BN / CIFAR-10 it cuts estimated inference energy by 28.5% for a 0.05% accuracy loss, with the energy model checked against SkyWater 130&nbsp;nm synthesis.</p>
+          <p>Learned activation thresholds combined with weight masks to skip multiply-accumulates, and a study of where those skips actually pay off: in a Sky130 processing element taken through signoff, an RTL-checked CNN accelerator, and LLM decoding on an A100. First-author work, under review at MLSys.</p>
         </div>
         <div class="research-item">
           <h3>Reliability qualification and test</h3>
